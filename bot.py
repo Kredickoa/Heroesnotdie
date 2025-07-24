@@ -9,10 +9,9 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 import io
 from dotenv import load_dotenv
-
+GUILD_ID = 1386300362595504159
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID"))
 
 
 intents = discord.Intents.default()
