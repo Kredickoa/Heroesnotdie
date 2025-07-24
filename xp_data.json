@@ -73,23 +73,23 @@
     },
     "1386300362595504159": {
         "961262391314755665": {
-            "xp": 80,
+            "xp": 70,
             "level": 1,
             "messages": 3,
-            "voice_minutes": 10,
+            "voice_minutes": 8,
             "reactions": 0,
             "history": {
-                "2025-07-24": 20
+                "2025-07-24": 10
             }
         },
         "764247482125123626": {
-            "xp": 30,
+            "xp": 20,
             "level": 1,
             "messages": 1,
-            "voice_minutes": 4,
+            "voice_minutes": 2,
             "reactions": 0,
             "history": {
-                "2025-07-24": 30
+                "2025-07-24": 20
             }
         }
     }
