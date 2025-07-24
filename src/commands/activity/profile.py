@@ -1,25 +1,20 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-import json
-import os
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import uuid
+import os
+from modules.db import get_database
 
-DATA_FILE = '../xp_data.json'
+db = get_database()
 
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, 'r') as f:
-        return json.load(f)
-
-def ensure_user(data, guild_id, user_id):
-    if str(guild_id) not in data:
-        data[str(guild_id)] = {}
-    if str(user_id) not in data[str(guild_id)]:
-        data[str(guild_id)][str(user_id)] = {
+async def get_user_data(guild_id, user_id):
+    user = await db.users.find_one({"guild_id": guild_id, "user_id": user_id})
+    if not user:
+        user = {
+            "guild_id": guild_id,
+            "user_id": user_id,
             "xp": 0,
             "level": 1,
             "messages": 0,
@@ -27,7 +22,8 @@ def ensure_user(data, guild_id, user_id):
             "reactions": 0,
             "history": {}
         }
-    return data[str(guild_id)][str(user_id)]
+        await db.users.insert_one(user)
+    return user
 
 def get_level_xp(level):
     return 5 * (level ** 2) + 50 * level + 100
@@ -43,8 +39,7 @@ class ProfileCommands(commands.Cog):
 
         try:
             target_user = user or interaction.user
-            data = load_data()
-            user_data = ensure_user(data, interaction.guild.id, target_user.id)
+            user_data = await get_user_data(interaction.guild.id, target_user.id)
 
             current_level = user_data.get("level", 0)
             xp = user_data.get("xp", 0)

@@ -34,11 +34,7 @@ intents.message_content = True
 # Initialize bot
 bot = commands.Bot(command_prefix=config.get("prefix", "!"), intents=intents)
 
-# Create data file if not exists
-DATA_FILE = '../xp_data.json'
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, 'w') as f:
-        json.dump({}, f)
+
 
 async def load_extensions():
     # Load events
