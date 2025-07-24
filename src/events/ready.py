@@ -12,7 +12,7 @@ class ReadyEvents(commands.Cog):
         
         # Load guild ID from config
         try:
-            with open("config.json", "r", encoding="utf-8") as f:
+            with open("../config.json", "r", encoding="utf-8") as f:
                 config = json.load(f)
             guild_id = config.get("guild")
             if guild_id:

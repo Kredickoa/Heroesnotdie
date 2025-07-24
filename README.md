@@ -33,5 +33,16 @@ pip install -r requirements.txt
 
 ### Запуск 
 ```bash
-python bot.py
+python run.py
+```
+
+### Структура проекту
+```
+src/
+├── bot.py              # Основний файл бота
+├── commands/           # Команди бота
+│   ├── activity/       # Команди активності
+│   └── info/          # Інформаційні команди
+├── events/            # Події бота
+└── modules/           # Допоміжні модулі
 ```

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import uuid
 
-DATA_FILE = 'xp_data.json'
+DATA_FILE = '../xp_data.json'
 
 def load_data():
     if not os.path.exists(DATA_FILE):

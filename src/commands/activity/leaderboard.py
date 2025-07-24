@@ -4,7 +4,7 @@ from discord.ext import commands
 import json
 import os
 
-DATA_FILE = 'xp_data.json'
+DATA_FILE = '../xp_data.json'
 
 def load_data():
     if not os.path.exists(DATA_FILE):

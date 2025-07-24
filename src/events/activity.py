@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 import os
 
-DATA_FILE = 'xp_data.json'
+DATA_FILE = '../xp_data.json'
 LEVEL_UP_CHANNEL_NAME = "bots"
 
 def load_data():
