@@ -2,17 +2,15 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import json
-import asyncio
-import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
 import os
-from PIL import Image, ImageDraw, ImageFont
-import io
+from datetime import datetime, timedelta
+import matplotlib.pyplot as plt
 from dotenv import load_dotenv
+import uuid
+
 GUILD_ID = 1386300362595504159
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
-
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -32,6 +30,8 @@ if not os.path.exists(DATA_FILE):
         json.dump({}, f)
 
 def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {}
     with open(DATA_FILE, 'r') as f:
         return json.load(f)
 
@@ -48,7 +48,8 @@ def ensure_user(data, guild_id, user_id):
             "level": 1,
             "messages": 0,
             "voice_minutes": 0,
-            "reactions": 0
+            "reactions": 0,
+            "history": {}
         }
     return data[str(guild_id)][str(user_id)]
 
@@ -81,6 +82,7 @@ async def on_message(message):
     user_data["xp"] += 10
     user_data["messages"] += 1
 
+<<<<<<< HEAD
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -91,80 +93,29 @@ async def on_message(message):
     user_data["xp"] += 10
     user_data["messages"] += 1
 
+=======
+>>>>>>> 282b3f9 (Збереження змін перед pull)
     today = datetime.now().strftime("%Y-%m-%d")
-    if "history" not in user_data:
-        user_data["history"] = {}
     user_data["history"][today] = user_data["history"].get(today, 0) + 10
 
     await level_up_check(message, user_data)
     save_data(data)
     await bot.process_commands(message)
 
-
 @bot.event
 async def on_reaction_add(reaction, user):
     if user.bot:
         return
-    data = load_data(str(reaction.message.guild.id))
+    data = load_data()
     user_data = ensure_user(data, reaction.message.guild.id, user.id)
 
     user_data["xp"] += 2
     user_data["reactions"] += 1
 
     today = datetime.now().strftime("%Y-%m-%d")
-    if "history" not in user_data:
-        user_data["history"] = {}
     user_data["history"][today] = user_data["history"].get(today, 0) + 2
 
     save_data(data)
-
-
-@tasks.loop(minutes=1)
-async def update_voice_time():
-    for guild in bot.guilds:
-        for vc in guild.voice_channels:
-            for member in vc.members:
-                if not member.bot:
-                    data = load_data(str(guild.id))
-                    user_data = ensure_user(data, guild.id, member.id)
-
-                    user_data["xp"] += 5
-                    user_data["voice_minutes"] += 1
-
-                    today = datetime.now().strftime("%Y-%m-%d")
-                    if "history" not in user_data:
-                        user_data["history"] = {}
-                    user_data["history"][today] = user_data["history"].get(today, 0) + 5
-
-                    save_data(data)
-
-
-def load_data(current_guild_id=None):
-    if not os.path.exists(DATA_FILE):
-        return {}
-
-    with open(DATA_FILE, 'r') as f:
-        data = json.load(f)
-
-    if current_guild_id is None:
-        return data
-
-    # Міграція ключів (якщо немає __guild_id)
-    migrated = False
-    updated_data = {}
-    for key, value in data.items():
-        if '__' in key:
-            updated_data[key] = value
-        else:
-            new_key = f"{key}__{current_guild_id}"
-            updated_data[new_key] = value
-            migrated = True
-
-    if migrated:
-        with open(DATA_FILE, 'w') as f:
-            json.dump(updated_data, f, indent=4)
-
-    return updated_data if migrated else data
 
 @tasks.loop(minutes=1)
 async def update_voice_time():
@@ -178,16 +129,12 @@ async def update_voice_time():
                     user_data["xp"] += 5
                     user_data["voice_minutes"] += 1
 
-                    # ✅ Оновлюємо XP по даті
                     today = datetime.now().strftime("%Y-%m-%d")
-                    if "history" not in user_data:
-                        user_data["history"] = {}
                     user_data["history"][today] = user_data["history"].get(today, 0) + 5
 
                     save_data(data)
 
-
-# SLASH КОМАНДИ
+# SLASH COMMANDS
 @TREE.command(name="profile", description="Показує твій профіль", guild=discord.Object(id=GUILD_ID))
 async def profile(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=False)
@@ -196,7 +143,6 @@ async def profile(interaction: discord.Interaction):
         data = load_data()
         user_data = ensure_user(data, interaction.guild.id, interaction.user.id)
 
-        # Основна інформація
         current_level = user_data.get("level", 0)
         xp = user_data.get("xp", 0)
         xp_needed = get_level_xp(current_level)
@@ -218,11 +164,6 @@ Voice: {user_data.get("voice_minutes", 0)} хв | Реакцій: {user_data.get
 Ролі: {roles_display}
 ```"""
 
-        # ДОДАЄМО ГРАФІК
-        import matplotlib.pyplot as plt
-        from datetime import datetime, timedelta
-        import uuid
-
         history = user_data.get("history", {})
         days = [datetime.now() - timedelta(days=i) for i in reversed(range(7))]
         labels = [day.strftime('%a') for day in days]
@@ -236,21 +177,16 @@ Voice: {user_data.get("voice_minutes", 0)} хв | Реакцій: {user_data.get
         plt.grid(True)
         plt.tight_layout()
 
-        # Унікальне ім’я файлу
         file_path = f"profile_graph_{uuid.uuid4().hex}.png"
         plt.savefig(file_path)
         plt.close()
 
         file = discord.File(file_path, filename="profile_graph.png")
         await interaction.followup.send(content=profile_text, file=file)
-
-        # Видаляємо файл після відправки
         os.remove(file_path)
 
     except Exception as e:
         await interaction.followup.send(f"⚠️ Помилка при завантаженні профілю: `{e}`")
-
-
 
 @TREE.command(name="leaderboard", description="Показує топ користувачів", guild=discord.Object(id=GUILD_ID))
 async def leaderboard(interaction: discord.Interaction):
@@ -258,7 +194,6 @@ async def leaderboard(interaction: discord.Interaction):
     data = load_data()
     users = data.get(str(interaction.guild.id), {})
 
-    # Сортування: за total XP (XP + рівень * 1000)
     sorted_users = sorted(users.items(), key=lambda x: x[1]["xp"] + x[1]["level"] * 1000, reverse=True)
 
     leaderboard_lines = ["📊 ЛІДЕРБОРД\n"]
@@ -295,13 +230,7 @@ async def leaderboard(interaction: discord.Interaction):
     result = "```\n" + "\n".join(leaderboard_lines) + "\n```"
     await interaction.followup.send(result)
 
-
-
-
-
-
-
-# АДМІН СЛЕШИ
+# Admin slash commands
 @TREE.command(name="addxp", description="Додати XP", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(user="Кому додати", amount="Скільки XP")
 async def add_xp(interaction: discord.Interaction, user: discord.Member, amount: int):
