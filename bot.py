@@ -81,7 +81,7 @@ async def on_message(message):
     user_data["xp"] += 10
     user_data["messages"] += 1
 
-   @bot.event
+@bot.event
 async def on_message(message):
     if message.author.bot:
         return
