@@ -81,7 +81,16 @@ async def on_message(message):
     user_data["xp"] += 10
     user_data["messages"] += 1
 
-    # ✅ Оновлюємо XP по даті
+   @bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    data = load_data(str(message.guild.id))  # передали айді гільдії
+    user_data = ensure_user(data, message.guild.id, message.author.id)
+
+    user_data["xp"] += 10
+    user_data["messages"] += 1
+
     today = datetime.now().strftime("%Y-%m-%d")
     if "history" not in user_data:
         user_data["history"] = {}
@@ -96,13 +105,12 @@ async def on_message(message):
 async def on_reaction_add(reaction, user):
     if user.bot:
         return
-    data = load_data()
+    data = load_data(str(reaction.message.guild.id))
     user_data = ensure_user(data, reaction.message.guild.id, user.id)
 
     user_data["xp"] += 2
     user_data["reactions"] += 1
 
-    # ✅ Оновлюємо XP по даті
     today = datetime.now().strftime("%Y-%m-%d")
     if "history" not in user_data:
         user_data["history"] = {}
@@ -110,7 +118,39 @@ async def on_reaction_add(reaction, user):
 
     save_data(data)
 
-def migrate_user_data(data, current_guild_id):
+
+@tasks.loop(minutes=1)
+async def update_voice_time():
+    for guild in bot.guilds:
+        for vc in guild.voice_channels:
+            for member in vc.members:
+                if not member.bot:
+                    data = load_data(str(guild.id))
+                    user_data = ensure_user(data, guild.id, member.id)
+
+                    user_data["xp"] += 5
+                    user_data["voice_minutes"] += 1
+
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    if "history" not in user_data:
+                        user_data["history"] = {}
+                    user_data["history"][today] = user_data["history"].get(today, 0) + 5
+
+                    save_data(data)
+
+
+def load_data(current_guild_id=None):
+    if not os.path.exists(DATA_FILE):
+        return {}
+
+    with open(DATA_FILE, 'r') as f:
+        data = json.load(f)
+
+    if current_guild_id is None:
+        return data
+
+    # Міграція ключів (якщо немає __guild_id)
+    migrated = False
     updated_data = {}
     for key, value in data.items():
         if '__' in key:
@@ -118,8 +158,13 @@ def migrate_user_data(data, current_guild_id):
         else:
             new_key = f"{key}__{current_guild_id}"
             updated_data[new_key] = value
-    return updated_data
+            migrated = True
 
+    if migrated:
+        with open(DATA_FILE, 'w') as f:
+            json.dump(updated_data, f, indent=4)
+
+    return updated_data if migrated else data
 
 @tasks.loop(minutes=1)
 async def update_voice_time():
