@@ -36,6 +36,11 @@ async def level_up_check(message, user_data):
     if user_data["xp"] >= needed_xp:
         user_data["xp"] -= needed_xp
         user_data["level"] += 1
+        
+        await update_user_data(message.guild.id, message.author.id, {
+            "xp": user_data["xp"],
+            "level": user_data["level"]
+        })
 
         channel = discord.utils.get(message.guild.text_channels, name=LEVEL_UP_CHANNEL_NAME)
         if channel:
@@ -63,8 +68,8 @@ class ActivityEvents(commands.Cog):
             "history": history
         }
         
-        await update_user_data(message.guild.id, message.author.id, update_data)
         user_data.update(update_data)
+        await update_user_data(message.guild.id, message.author.id, update_data)
         await level_up_check(message, user_data)
 
     @commands.Cog.listener()
