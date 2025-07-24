@@ -35,7 +35,8 @@ pip install -r requirements.txt
 ```bash
 python run.py
 ```
- 
+
+     
 ### Структура проекту
 ```
 src/
