@@ -71,26 +71,24 @@
         "last_command": "",
         "last_command_time": ""
     },
-    "1386300362595504159": {
-        "961262391314755665": {
-            "xp": 70,
-            "level": 1,
-            "messages": 3,
-            "voice_minutes": 8,
-            "reactions": 0,
-            "history": {
-                "2025-07-24": 10
-            }
-        },
-        "764247482125123626": {
-            "xp": 20,
-            "level": 1,
-            "messages": 1,
-            "voice_minutes": 2,
-            "reactions": 0,
-            "history": {
-                "2025-07-24": 20
-            }
+    "961262391314755665__1386300362595504159": {
+        "xp": 70,
+        "level": 1,
+        "messages": 3,
+        "voice_minutes": 8,
+        "reactions": 0,
+        "history": {
+            "2025-07-24": 10
+        }
+    },
+    "764247482125123626__1386300362595504159": {
+        "xp": 20,
+        "level": 1,
+        "messages": 1,
+        "voice_minutes": 2,
+        "reactions": 0,
+        "history": {
+            "2025-07-24": 20
         }
     }
 }
