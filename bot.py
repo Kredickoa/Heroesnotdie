@@ -1,3 +1,4 @@
+# Import required libraries
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -8,10 +9,30 @@ import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 import uuid
 
-GUILD_ID = 1386300362595504159
+# Load configuration
+try:
+    with open("config.json", "r", encoding="utf-8") as f:
+        config = json.load(f)
+except FileNotFoundError: ## Якщо файл конфігу немає
+    print("Error: config.json file not found")
+    exit(1)
+except json.JSONDecodeError: ## Якщо форматування в коді невірне
+    print("Error: Invalid JSON in config.json")
+    exit(1)
+
+# Load environment variables
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    print("Error: TOKEN not found in .env file")
+    exit(1)
 
+# Set guild ID from config
+GUILD_ID = config.get("guild")
+DATA_FILE = 'xp_data.json'
+LEVEL_UP_CHANNEL_NAME = "bots"
+
+# Configure bot intents
 intents = discord.Intents.default()
 intents.messages = True
 intents.guilds = True
@@ -20,10 +41,10 @@ intents.reactions = True
 intents.voice_states = True
 intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+# Initialize bot with prefix and intents
+bot = commands.Bot(command_prefix=config.get("prefix", "!"), intents=intents)
+
 TREE = bot.tree
-DATA_FILE = 'xp_data.json'
-LEVEL_UP_CHANNEL_NAME = "bots"
 
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, 'w') as f:
@@ -82,19 +103,6 @@ async def on_message(message):
     user_data["xp"] += 10
     user_data["messages"] += 1
 
-<<<<<<< HEAD
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-    data = load_data(str(message.guild.id))  # передали айді гільдії
-    user_data = ensure_user(data, message.guild.id, message.author.id)
-
-    user_data["xp"] += 10
-    user_data["messages"] += 1
-
-=======
->>>>>>> 282b3f9 (Збереження змін перед pull)
     today = datetime.now().strftime("%Y-%m-%d")
     user_data["history"][today] = user_data["history"].get(today, 0) + 10
 
@@ -135,27 +143,29 @@ async def update_voice_time():
                     save_data(data)
 
 # SLASH COMMANDS
-@TREE.command(name="profile", description="Показує твій профіль", guild=discord.Object(id=GUILD_ID))
-async def profile(interaction: discord.Interaction):
+@TREE.command(name="profile", description="Показує профіль користувача", guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(user="Користувач (за замовчуванням - ти)")
+async def profile(interaction: discord.Interaction, user: discord.Member = None):
     await interaction.response.defer(ephemeral=False)
 
     try:
+        target_user = user or interaction.user
         data = load_data()
-        user_data = ensure_user(data, interaction.guild.id, interaction.user.id)
+        user_data = ensure_user(data, interaction.guild.id, target_user.id)
 
         current_level = user_data.get("level", 0)
         xp = user_data.get("xp", 0)
         xp_needed = get_level_xp(current_level)
         xp_percent = round((xp / xp_needed) * 100) if xp_needed else 0
         roles = [
-            role.name for role in sorted(interaction.user.roles, key=lambda r: r.position, reverse=True)
+            role.name for role in sorted(target_user.roles, key=lambda r: r.position, reverse=True)
             if role.name != "@everyone"
         ][:3]
         roles_display = ", ".join(roles) if roles else "Немає"
-        joined_at = interaction.user.joined_at.strftime("%d %B %Y") if interaction.user.joined_at else "Невідомо"
+        joined_at = target_user.joined_at.strftime("%d %B %Y") if target_user.joined_at else "Невідомо"
 
         profile_text = f"""```
-ПРОФІЛЬ: {interaction.user.display_name}
+ПРОФІЛЬ: {target_user.display_name}
 Учасник з: {joined_at}
 
 Рівень: {current_level} | XP: {xp} / {xp_needed} ({xp_percent}%)
