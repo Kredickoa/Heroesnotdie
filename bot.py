@@ -110,6 +110,16 @@ async def on_reaction_add(reaction, user):
 
     save_data(data)
 
+def migrate_user_data(data, current_guild_id):
+    updated_data = {}
+    for key, value in data.items():
+        if '__' in key:
+            updated_data[key] = value
+        else:
+            new_key = f"{key}__{current_guild_id}"
+            updated_data[new_key] = value
+    return updated_data
+
 
 @tasks.loop(minutes=1)
 async def update_voice_time():
