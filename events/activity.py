@@ -29,7 +29,10 @@ def ensure_user(data, guild_id, user_id):
             "reactions": 0,
             "history": {}
         }
-    return data[str(guild_id)][str(user_id)]
+    user_data = data[str(guild_id)][str(user_id)]
+    if "history" not in user_data:
+        user_data["history"] = {}
+    return user_data
 
 def get_level_xp(level):
     return 5 * (level ** 2) + 50 * level + 100
