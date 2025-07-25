@@ -3,3 +3,4 @@ matplotlib
 Pillow
 python-dotenv
 motor
+rich
