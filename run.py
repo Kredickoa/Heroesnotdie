@@ -6,4 +6,4 @@ import sys
 os.chdir('src')
 sys.path.insert(0, os.getcwd())
 
-from bot import bot
+import bot
