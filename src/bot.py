@@ -79,17 +79,9 @@ async def setup_hook():
     
     log.info(f"Extensions loaded: {success} success, {errors} errors")
     
-    # Sync slash commands
+    # Sync slash commands globally
     await bot.tree.sync()
     log.info("Synced slash commands globally")
-    
-    # Also sync to dev guild for instant updates
-    guild_id = config.get("guild")
-    if guild_id:
-        guild = discord.Object(id=guild_id)
-        bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
-        log.info(f"Also synced to dev guild {guild_id} for instant updates")
 
 bot.run(TOKEN)
     
