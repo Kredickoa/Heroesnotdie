@@ -34,24 +34,30 @@ intents.message_content = True
 # Initialize bot
 bot = commands.Bot(command_prefix=config.get("prefix", "!"), intents=intents)
 
-
-
 async def load_extensions():
-    # Load events
-    for filename in os.listdir('./events'):
-        if filename.endswith('.py') and filename != '__init__.py':
-            await bot.load_extension(f'events.{filename[:-3]}')
-    
-    # Load commands from categories
-    for category in os.listdir('./commands'):
-        if os.path.isdir(f'./commands/{category}'):
-            for filename in os.listdir(f'./commands/{category}'):
+    try:
+        # Load events
+        if os.path.exists('./events'):
+            for filename in os.listdir('./events'):
                 if filename.endswith('.py') and filename != '__init__.py':
-                    await bot.load_extension(f'commands.{category}.{filename[:-3]}')
+                    await bot.load_extension(f'events.{filename[:-3]}')
+                    print(f"Loaded event: {filename[:-3]}")
+        
+        # Load commands from categories
+        if os.path.exists('./commands'):
+            for category in os.listdir('./commands'):
+                if os.path.isdir(f'./commands/{category}'):
+                    for filename in os.listdir(f'./commands/{category}'):
+                        if filename.endswith('.py') and filename != '__init__.py':
+                            await bot.load_extension(f'commands.{category}.{filename[:-3]}')
+                            print(f"Loaded command: {category}.{filename[:-3]}")
+    except Exception as e:
+        print(f"Error loading extensions: {e}")
+
+await load_extensions()
 
 @bot.event
 async def on_ready():
-    await load_extensions()
-    print(f'Bot loaded with {len(bot.cogs)} cogs')
+    print(f'Bot {bot.user} is ready! Loaded {len(bot.cogs)} cogs')
 
 bot.run(TOKEN)
