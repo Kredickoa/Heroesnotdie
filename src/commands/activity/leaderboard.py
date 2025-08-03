@@ -5,50 +5,33 @@ from modules.db import get_database
 
 db = get_database()
 
-class LeaderboardCommands(commands.Cog):
+class LevelPingCommand(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="leaderboard", description="Показує топ користувачів")
-    async def leaderboard(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=False)
-        
-        users = await db.users.find({"guild_id": interaction.guild.id}).to_list(None)
-        sorted_users = sorted(users, key=lambda x: x["xp"] + x["level"] * 1000, reverse=True)
+    @app_commands.command(name="levelping", description="Увімкнути/вимкнути пінги при підвищенні рівня")
+    async def levelping(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
 
-        leaderboard_lines = ["📊 ЛІДЕРБОРД\n"]
-        author_id = str(interaction.user.id)
-        found_author = False
+        user_data = await db.users.find_one({"user_id": user_id, "guild_id": interaction.guild.id})
+        current_state = True  # за замовчуванням пінги увімкнені
+        if user_data and "allow_level_ping" in user_data:
+            current_state = user_data["allow_level_ping"]
 
-        for i, user_data in enumerate(sorted_users[:20], start=1):
-            member = interaction.guild.get_member(user_data["user_id"])
-            name = member.display_name if member else f"User#{user_data['user_id']}"
+        new_state = not current_state
 
-            line = (
-                f"{i:>2}. {name:<20} | "
-                f"Lvl: {user_data['level']:<2} | "
-                f"XP: {user_data['xp']:<4} | "
-                f"Voice: {user_data['voice_minutes']} хв | "
-                f"Реакцій: {user_data['reactions']}"
-            )
-            leaderboard_lines.append(line)
+        await db.users.update_one(
+            {"user_id": user_id, "guild_id": interaction.guild.id},
+            {"$set": {"allow_level_ping": new_state}},
+            upsert=True
+        )
 
-            if user_data["user_id"] == interaction.user.id:
-                found_author = True
+        if new_state:
+            msg = "🔔 Пінги при левелапі **увімкнено**."
+        else:
+            msg = "🔕 Пінги при левелапі **вимкнено**."
 
-        if not found_author:
-            for i, user_data in enumerate(sorted_users, start=1):
-                if user_data["user_id"] == interaction.user.id:
-                    line = (
-                        f"\nТи на {i} місці:\n"
-                        f"Lvl: {user_data['level']} | XP: {user_data['xp']} | "
-                        f"Voice: {user_data['voice_minutes']} хв | Реакцій: {user_data['reactions']}"
-                    )
-                    leaderboard_lines.append(line)
-                    break
-
-        result = "```\n" + "\n".join(leaderboard_lines) + "\n```"
-        await interaction.followup.send(result)
+        await interaction.response.send_message(msg, ephemeral=True)
 
 async def setup(bot):
-    await bot.add_cog(LeaderboardCommands(bot))
+    await bot.add_cog(LevelPingCommand(bot))
