@@ -12,7 +12,7 @@ class LevelPingCommand(commands.Cog):
     async def levelping(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
         file_path = "xp_data.json"
-
+        
         # Завантаження даних
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
