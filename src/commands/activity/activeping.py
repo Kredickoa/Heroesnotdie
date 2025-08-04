@@ -23,7 +23,7 @@ class ActivePingChecker(commands.Cog):
     async def setup_activeping(self, interaction: discord.Interaction, role: discord.Role, min_level: int = 5, min_xp_5d: int = 500):
         """Налаштувати систему активних ролей"""
         
-        # Перевіряємо, чи бот може керувати цією роллю
+        
         if role.position >= interaction.guild.me.top_role.position:
             embed = discord.Embed(
                 title="❌ Помилка",
@@ -32,7 +32,7 @@ class ActivePingChecker(commands.Cog):
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        # Зберігаємо налаштування в базу даних
+        
         await db.settings.update_one(
             {"guild_id": str(interaction.guild.id)},
             {
@@ -47,7 +47,7 @@ class ActivePingChecker(commands.Cog):
 
         embed = discord.Embed(
             title="✅ Active Ping налаштовано!",
-            description=f"Система активних ролей успішно налаштована",
+            description="Система активних ролей успішно налаштована",
             color=0x00ff00
         )
         embed.add_field(name="Роль:", value=role.mention, inline=True)
@@ -58,7 +58,6 @@ class ActivePingChecker(commands.Cog):
             value="Перевірка активності відбувається автоматично кожні 24 години.",
             inline=False
         )
-        
         await interaction.response.send_message(embed=embed)
 
     @discord.app_commands.command(name="activeping-disable", description="Вимкнути систему активних ролей")
@@ -137,7 +136,7 @@ class ActivePingChecker(commands.Cog):
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        # Показуємо повідомлення про початок перевірки
+
         embed = discord.Embed(
             title="🔄 Перевірка активності",
             description="Починаю перевірку активності всіх користувачів...",
@@ -145,10 +144,10 @@ class ActivePingChecker(commands.Cog):
         )
         await interaction.response.send_message(embed=embed)
 
-        # Запускаємо перевірку для цієї гільдії
+
         added, removed = await self._check_guild_active_roles(interaction.guild, setting)
 
-        # Оновлюємо повідомлення з результатами
+
         embed = discord.Embed(
             title="✅ Перевірку завершено",
             description="Результати ручної перевірки активності:",
@@ -159,83 +158,26 @@ class ActivePingChecker(commands.Cog):
         
         await interaction.edit_original_response(embed=embed)
 
-  async def _check_guild_active_roles(self, guild, setting):
-    role_id = setting["active_role_id"]
-    min_level = setting.get("min_level", 5)
-    min_xp_5d = setting.get("min_xp_5d", 500)
-
-    role = guild.get_role(role_id)
-    if not role:
-        return 0, 0
-
-    cutoff_date = datetime.utcnow().date() - timedelta(days=5)
-
-    added_count = 0
-    removed_count = 0
-
-    for member in guild.members:
-        if member.bot:
-            continue
-
-        user_data = await db.users.find_one({"guild_id": str(guild.id), "user_id": str(member.id)})
-        if not user_data:
-            # Якщо профілю немає — знімаємо роль, якщо є
-            if role in member.roles:
-                try:
-                    await member.remove_roles(role, reason="Inactive (no profile)")
-                    removed_count += 1
-                except Exception:
-                    pass
-            continue
-
-        level = user_data.get("level", 0)
-        history = user_data.get("history", {})
-
-        # Підрахунок XP за останні 5 днів
-        recent_xp = 0
-        for i in range(5):
-            day = (datetime.utcnow().date() - timedelta(days=i)).strftime("%Y-%m-%d")
-            recent_xp += history.get(day, 0)
-
-        has_role = role in member.roles
-
-        if level >= min_level and recent_xp >= min_xp_5d:
-            if not has_role:
-                try:
-                    await member.add_roles(role, reason="Active player role assigned")
-                    added_count += 1
-                except Exception:
-                    pass
-        else:
-            if has_role:
-                try:
-                    await member.remove_roles(role, reason="Active player role removed (inactive)")
-                    removed_count += 1
-                except Exception:
-                    pass
-
-    return added_count, removed_count
-
+    async def _check_guild_active_roles(self, guild, setting):
+        role_id = setting["active_role_id"]
+        min_level = setting.get("min_level", 5)
+        min_xp_5d = setting.get("min_xp_5d", 500)
 
         role = guild.get_role(role_id)
         if not role:
             return 0, 0
 
-        # Дата 5 днів тому
-        cutoff_date = datetime.utcnow() - timedelta(days=5)
-        
+        cutoff_date = datetime.utcnow().date() - timedelta(days=5)
+
         added_count = 0
         removed_count = 0
 
-        # Перебираємо учасників гільдії
         for member in guild.members:
             if member.bot:
                 continue
 
-            # Отримуємо профіль користувача
-            profile = await db.profiles.find_one({"user_id": str(member.id)})
-            if not profile:
-                # Якщо немає профілю, знімаємо роль, якщо є
+            user_data = await db.users.find_one({"guild_id": str(guild.id), "user_id": str(member.id)})
+            if not user_data:
                 if role in member.roles:
                     try:
                         await member.remove_roles(role, reason="Inactive (no profile)")
@@ -244,24 +186,17 @@ class ActivePingChecker(commands.Cog):
                         pass
                 continue
 
-            level = profile.get("level", 0)
-            xp_history = profile.get("xp_history", [])
+            level = user_data.get("level", 0)
+            history = user_data.get("history", {})
 
-            # Сумуємо XP за останні 5 днів
             recent_xp = 0
-            for entry in xp_history:
-                date_str = entry.get("date")
-                if not date_str:
-                    continue
-                try:
-                    date_obj = datetime.fromisoformat(date_str)
-                    if date_obj >= cutoff_date:
-                        recent_xp += entry.get("xp", 0)
-                except ValueError:
-                    continue
+            for i in range(5):
+                day = (datetime.utcnow().date() - timedelta(days=i)).strftime("%Y-%m-%d")
+                recent_xp += history.get(day, 0)
 
-            # Логіка видачі ролі
             has_role = role in member.roles
+
+
             if level >= min_level and recent_xp >= min_xp_5d:
                 if not has_role:
                     try:
@@ -281,9 +216,10 @@ class ActivePingChecker(commands.Cog):
 
     @tasks.loop(hours=24)
     async def check_active_roles(self):
+       
         """Автоматична перевірка активних ролей кожні 24 години"""
-        # Отримуємо всі гільдії з налаштуваннями activeping
-        async for setting in db.settings.find({"active_role_id": {"$exists": True}}):
+       
+       async for setting in db.settings.find({"active_role_id": {"$exists": True}}):
             guild_id = int(setting["guild_id"])
             guild = self.bot.get_guild(guild_id)
             if not guild:
