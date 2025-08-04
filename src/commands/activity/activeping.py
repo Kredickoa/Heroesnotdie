@@ -13,9 +13,7 @@ class ActivePingChecker(commands.Cog):
     def cog_unload(self):
         self.check_active_roles.cancel()
 
-    activeping_group = discord.app_commands.Group(name="activeping", description="Керування системою активних ролей")
-
-    @activeping_group.command(name="setup", description="Налаштувати систему активних ролей")
+    @discord.app_commands.command(name="activeping-setup", description="Налаштувати систему активних ролей")
     @discord.app_commands.describe(
         role="Роль для активних гравців",
         min_level="Мінімальний рівень (за замовчуванням: 5)",
@@ -63,7 +61,7 @@ class ActivePingChecker(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    @activeping_group.command(name="disable", description="Вимкнути систему активних ролей")
+    @discord.app_commands.command(name="activeping-disable", description="Вимкнути систему активних ролей")
     @discord.app_commands.default_permissions(manage_roles=True)
     async def disable_activeping(self, interaction: discord.Interaction):
         """Вимкнути систему активних ролей"""
@@ -88,7 +86,7 @@ class ActivePingChecker(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    @activeping_group.command(name="status", description="Показати поточні налаштування системи")
+    @discord.app_commands.command(name="activeping-status", description="Показати поточні налаштування системи")
     @discord.app_commands.default_permissions(manage_roles=True)
     async def status_activeping(self, interaction: discord.Interaction):
         """Показати поточні налаштування"""
@@ -124,7 +122,7 @@ class ActivePingChecker(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
-    @activeping_group.command(name="check", description="Ручна перевірка активності всіх користувачів")
+    @discord.app_commands.command(name="activeping-check", description="Ручна перевірка активності всіх користувачів")
     @discord.app_commands.default_permissions(manage_roles=True)
     async def manual_check(self, interaction: discord.Interaction):
         """Ручна перевірка активності всіх користувачів"""
@@ -248,22 +246,5 @@ class ActivePingChecker(commands.Cog):
     async def before_check(self):
         await self.bot.wait_until_ready()
 
-    @setup_activeping.error
-    @disable_activeping.error
-    @status_activeping.error
-    @manual_check.error
-    async def activeping_error(self, interaction: discord.Interaction, error):
-        embed = discord.Embed(
-            title="❌ Помилка",
-            description="Сталася помилка при виконанні команди",
-            color=0xff0000
-        )
-        try:
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        except:
-            await interaction.followup.send(embed=embed, ephemeral=True)
-
 async def setup(bot):
-    cog = ActivePingChecker(bot)
-    bot.tree.add_command(cog.activeping_group)
-    await bot.add_cog(cog)
+    await bot.add_cog(ActivePingChecker(bot))
