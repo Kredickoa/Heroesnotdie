@@ -13,47 +13,30 @@ class ActivePingChecker(commands.Cog):
     def cog_unload(self):
         self.check_active_roles.cancel()
 
-    @commands.group(name="activeping", aliases=["ap"], invoke_without_command=True)
-    @commands.has_permissions(manage_roles=True)
-    async def activeping(self, ctx):
-        """Керування системою активних ролей"""
-        embed = discord.Embed(
-            title="🎯 Active Ping System", 
-            description="Система автоматичної видачі ролей активним гравцям",
-            color=0x00ff00
-        )
-        embed.add_field(
-            name="Команди:",
-            value="`/activeping setup <роль> [мін_рівень] [мін_xp_5днів]` - Налаштувати систему\n"
-                  "`/activeping disable` - Вимкнути систему\n"
-                  "`/activeping status` - Поточні налаштування\n"
-                  "`/activeping check` - Ручна перевірка активності",
-            inline=False
-        )
-        embed.add_field(
-            name="За замовчуванням:",
-            value="Мінімальний рівень: **5**\nМінімум XP за 5 днів: **500**",
-            inline=False
-        )
-        await ctx.send(embed=embed)
+    activeping_group = discord.app_commands.Group(name="activeping", description="Керування системою активних ролей")
 
-    @activeping.command(name="setup")
-    @commands.has_permissions(manage_roles=True)
-    async def setup_activeping(self, ctx, role: discord.Role, min_level: int = 5, min_xp_5d: int = 500):
+    @activeping_group.command(name="setup", description="Налаштувати систему активних ролей")
+    @discord.app_commands.describe(
+        role="Роль для активних гравців",
+        min_level="Мінімальний рівень (за замовчуванням: 5)",
+        min_xp_5d="Мінімум XP за 5 днів (за замовчуванням: 500)"
+    )
+    @discord.app_commands.default_permissions(manage_roles=True)
+    async def setup_activeping(self, interaction: discord.Interaction, role: discord.Role, min_level: int = 5, min_xp_5d: int = 500):
         """Налаштувати систему активних ролей"""
         
         # Перевіряємо, чи бот може керувати цією роллю
-        if role.position >= ctx.guild.me.top_role.position:
+        if role.position >= interaction.guild.me.top_role.position:
             embed = discord.Embed(
                 title="❌ Помилка",
                 description="Роль знаходиться вище за мою найвищу роль! Перемістіть мою роль вище або оберіть іншу роль.",
                 color=0xff0000
             )
-            return await ctx.send(embed=embed)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         # Зберігаємо налаштування в базу даних
         await db.settings.update_one(
-            {"guild_id": str(ctx.guild.id)},
+            {"guild_id": str(interaction.guild.id)},
             {
                 "$set": {
                     "active_role_id": role.id,
@@ -78,15 +61,15 @@ class ActivePingChecker(commands.Cog):
             inline=False
         )
         
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    @activeping.command(name="disable")
-    @commands.has_permissions(manage_roles=True)
-    async def disable_activeping(self, ctx):
+    @activeping_group.command(name="disable", description="Вимкнути систему активних ролей")
+    @discord.app_commands.default_permissions(manage_roles=True)
+    async def disable_activeping(self, interaction: discord.Interaction):
         """Вимкнути систему активних ролей"""
         
         result = await db.settings.update_one(
-            {"guild_id": str(ctx.guild.id)},
+            {"guild_id": str(interaction.guild.id)},
             {"$unset": {"active_role_id": "", "min_level": "", "min_xp_5d": ""}}
         )
         
@@ -103,14 +86,14 @@ class ActivePingChecker(commands.Cog):
                 color=0xffaa00
             )
         
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    @activeping.command(name="status")
-    @commands.has_permissions(manage_roles=True)
-    async def status_activeping(self, ctx):
+    @activeping_group.command(name="status", description="Показати поточні налаштування системи")
+    @discord.app_commands.default_permissions(manage_roles=True)
+    async def status_activeping(self, interaction: discord.Interaction):
         """Показати поточні налаштування"""
         
-        setting = await db.settings.find_one({"guild_id": str(ctx.guild.id)})
+        setting = await db.settings.find_one({"guild_id": str(interaction.guild.id)})
         
         if not setting or "active_role_id" not in setting:
             embed = discord.Embed(
@@ -118,16 +101,16 @@ class ActivePingChecker(commands.Cog):
                 description="Система не налаштована на цьому сервері",
                 color=0xffaa00
             )
-            return await ctx.send(embed=embed)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        role = ctx.guild.get_role(setting["active_role_id"])
+        role = interaction.guild.get_role(setting["active_role_id"])
         if not role:
             embed = discord.Embed(
                 title="⚠️ Помилка",
                 description="Налаштована роль була видалена",
                 color=0xff0000
             )
-            return await ctx.send(embed=embed)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         embed = discord.Embed(
             title="📊 Статус Active Ping",
@@ -139,14 +122,14 @@ class ActivePingChecker(commands.Cog):
         embed.add_field(name="Мін. XP за 5 днів:", value=str(setting.get("min_xp_5d", 500)), inline=True)
         embed.add_field(name="Учасників з роллю:", value=str(len(role.members)), inline=True)
         
-        await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
-    @activeping.command(name="check")
-    @commands.has_permissions(manage_roles=True)
-    async def manual_check(self, ctx):
+    @activeping_group.command(name="check", description="Ручна перевірка активності всіх користувачів")
+    @discord.app_commands.default_permissions(manage_roles=True)
+    async def manual_check(self, interaction: discord.Interaction):
         """Ручна перевірка активності всіх користувачів"""
         
-        setting = await db.settings.find_one({"guild_id": str(ctx.guild.id)})
+        setting = await db.settings.find_one({"guild_id": str(interaction.guild.id)})
         
         if not setting or "active_role_id" not in setting:
             embed = discord.Embed(
@@ -154,7 +137,7 @@ class ActivePingChecker(commands.Cog):
                 description="Active Ping система не налаштована на цьому сервері",
                 color=0xff0000
             )
-            return await ctx.send(embed=embed)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         # Показуємо повідомлення про початок перевірки
         embed = discord.Embed(
@@ -162,10 +145,10 @@ class ActivePingChecker(commands.Cog):
             description="Починаю перевірку активності всіх користувачів...",
             color=0xffaa00
         )
-        message = await ctx.send(embed=embed)
+        await interaction.response.send_message(embed=embed)
 
         # Запускаємо перевірку для цієї гільдії
-        added, removed = await self._check_guild_active_roles(ctx.guild, setting)
+        added, removed = await self._check_guild_active_roles(interaction.guild, setting)
 
         # Оновлюємо повідомлення з результатами
         embed = discord.Embed(
@@ -176,7 +159,7 @@ class ActivePingChecker(commands.Cog):
         embed.add_field(name="Додано ролей:", value=str(added), inline=True)
         embed.add_field(name="Знято ролей:", value=str(removed), inline=True)
         
-        await message.edit(embed=embed)
+        await interaction.edit_original_response(embed=embed)
 
     async def _check_guild_active_roles(self, guild, setting):
         """Перевірка активних ролей для конкретної гільдії"""
@@ -269,21 +252,18 @@ class ActivePingChecker(commands.Cog):
     @disable_activeping.error
     @status_activeping.error
     @manual_check.error
-    async def activeping_error(self, ctx, error):
-        if isinstance(error, commands.MissingPermissions):
-            embed = discord.Embed(
-                title="❌ Недостатньо прав",
-                description="Для використання цієї команди потрібне право **Керування ролями**",
-                color=0xff0000
-            )
-            await ctx.send(embed=embed)
-        elif isinstance(error, commands.RoleNotFound):
-            embed = discord.Embed(
-                title="❌ Роль не знайдено",
-                description="Вказана роль не існує на цьому сервері",
-                color=0xff0000
-            )
-            await ctx.send(embed=embed)
+    async def activeping_error(self, interaction: discord.Interaction, error):
+        embed = discord.Embed(
+            title="❌ Помилка",
+            description="Сталася помилка при виконанні команди",
+            color=0xff0000
+        )
+        try:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot):
-    await bot.add_cog(ActivePingChecker(bot))
+    cog = ActivePingChecker(bot)
+    bot.tree.add_command(cog.activeping_group)
+    await bot.add_cog(cog)
