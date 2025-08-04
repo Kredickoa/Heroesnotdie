@@ -10,7 +10,7 @@ class Pulse(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="pulse-setup", description="Налаштувати Pulse систему на сервері")
-    async def pulse_setup(self, interaction: discord.Interaction):
+    async def pulse_setup(self, interaction: discord.Interaction, role: discord.Role, hp_threshold: int):
         guild_id = str(interaction.guild.id)
         collection = db["pulse_settings"]
 
@@ -19,8 +19,20 @@ class Pulse(commands.Cog):
             await interaction.response.send_message("⚠️ Pulse вже активовано на цьому сервері.", ephemeral=True)
             return
 
-        await collection.insert_one({"_id": guild_id, "enabled": True})
-        await interaction.response.send_message("✅ Pulse система активована!", ephemeral=True)
+        await collection.insert_one({
+            "_id": guild_id,
+            "enabled": True,
+            "role_id": role.id,
+            "hp_threshold": hp_threshold
+        })
+        await interaction.response.send_message(f"✅ Pulse система активована! Роль {role.name} буде видаватися за {hp_threshold} хп за 7 днів.", ephemeral=True)
+
+        # Перевірка та видача ролі одразу після налаштування
+        member = interaction.user
+        level = 5  # Припустимо, що рівень береться з іншої системи (замінити на реальну логіку)
+        if level >= 5:  # Перевірка, чи користувач на 5-му рівні або вище
+            await member.add_roles(role)
+            await interaction.followup.send(f"✅ Роль {role.name} видана вам, оскільки ваш рівень ({level}) відповідає умовам!", ephemeral=True)
 
     @app_commands.command(name="pulse-status", description="Перевірити статус Pulse системи")
     async def pulse_status(self, interaction: discord.Interaction):
@@ -29,7 +41,8 @@ class Pulse(commands.Cog):
         data = await collection.find_one({"_id": guild_id})
 
         if data and data.get("enabled"):
-            await interaction.response.send_message("✅ Pulse система увімкнена.", ephemeral=True)
+            role = interaction.guild.get_role(data["role_id"])
+            await interaction.response.send_message(f"✅ Pulse система увімкнена. Роль: {role.name}, ХП за 7 днів: {data['hp_threshold']}.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Pulse система вимкнена.", ephemeral=True)
 
