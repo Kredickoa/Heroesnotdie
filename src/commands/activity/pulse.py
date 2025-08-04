@@ -45,7 +45,7 @@ class Pulse(commands.Cog):
 
     @app_commands.command(name="pulse-check", description="Ручна перевірка активності")
     async def pulse_check(self, interaction: discord.Interaction):
-        # ТУТ МОЖЕШ ДОДАТИ ЛОГІКУ ПЕРЕВІРКИ АКТИВНОСТІ КОРИСТУВАЧІВ
+        # TODO: Додати логіку перевірки активності
         await interaction.response.send_message("🔄 Ручна перевірка активності запущена.", ephemeral=True)
 
 async def setup(bot):
