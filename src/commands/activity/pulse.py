@@ -155,56 +155,24 @@ class Pulse(commands.Cog):
         
         await interaction.edit_original_response(embed=embed)
 
-   async def _check_member_active_role(self, member, guild):
-    setting = await db.settings.find_one({"guild_id": str(guild.id)})
-    if not setting or "active_role_id" not in setting:
-        return 0, 0
-
-    role = guild.get_role(setting["active_role_id"])
+   async def _check_guild_active_roles(self, guild, setting):
+    role_id = setting["active_role_id"]
+    role = guild.get_role(role_id)
     if not role:
         return 0, 0
 
-    min_level = setting.get("min_level", 5)
-    # Тимчасово виключили min_xp_5d
-    # min_xp_5d = setting.get("min_xp_5d", 100)
+    added_count = 0
+    removed_count = 0
 
-    user_data = await db.users.find_one({"guild_id": str(guild.id), "user_id": str(member.id)})
-    if not user_data:
-        if role in member.roles:
-            try:
-                await member.remove_roles(role, reason="Inactive (no profile)")
-                return 0, 1
-            except Exception:
-                return 0, 0
-        return 0, 0
+    for member in guild.members:
+        if member.bot:
+            continue
 
-    level = user_data.get("level", 0)
-    print(f"Checking {member.name}, level: {level}")
+        added, removed = await self._check_member_active_role(member, guild)
+        added_count += added
+        removed_count += removed
 
-    has_role = role in member.roles
-    added = 0
-    removed = 0
-
-    if level >= min_level:
-        if not has_role:
-            try:
-                await member.add_roles(role, reason="Active player role assigned")
-                added = 1
-            except Exception as e:
-                print(f"Error adding role to {member.name}: {e}")
-        else:
-            print(f"{member.name} already has role, no action needed")
-    else:
-        if has_role:
-            try:
-                await member.remove_roles(role, reason="Active player role removed (inactive)")
-                removed = 1
-            except Exception as e:
-                print(f"Error removing role from {member.name}: {e}")
-        else:
-            print(f"{member.name} does not qualify, no action needed")
-
-    return added, removed
+    return added_count, removed_count
 
     async def _check_guild_active_roles(self, guild, setting):
         role_id = setting["active_role_id"]
