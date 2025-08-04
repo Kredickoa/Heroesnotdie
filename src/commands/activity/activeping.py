@@ -159,11 +159,63 @@ class ActivePingChecker(commands.Cog):
         
         await interaction.edit_original_response(embed=embed)
 
-    async def _check_guild_active_roles(self, guild, setting):
-        """Перевірка активних ролей для конкретної гільдії"""
-        role_id = setting["active_role_id"]
-        min_level = setting.get("min_level", 5)
-        min_xp_5d = setting.get("min_xp_5d", 500)
+  async def _check_guild_active_roles(self, guild, setting):
+    role_id = setting["active_role_id"]
+    min_level = setting.get("min_level", 5)
+    min_xp_5d = setting.get("min_xp_5d", 500)
+
+    role = guild.get_role(role_id)
+    if not role:
+        return 0, 0
+
+    cutoff_date = datetime.utcnow().date() - timedelta(days=5)
+
+    added_count = 0
+    removed_count = 0
+
+    for member in guild.members:
+        if member.bot:
+            continue
+
+        user_data = await db.users.find_one({"guild_id": str(guild.id), "user_id": str(member.id)})
+        if not user_data:
+            # Якщо профілю немає — знімаємо роль, якщо є
+            if role in member.roles:
+                try:
+                    await member.remove_roles(role, reason="Inactive (no profile)")
+                    removed_count += 1
+                except Exception:
+                    pass
+            continue
+
+        level = user_data.get("level", 0)
+        history = user_data.get("history", {})
+
+        # Підрахунок XP за останні 5 днів
+        recent_xp = 0
+        for i in range(5):
+            day = (datetime.utcnow().date() - timedelta(days=i)).strftime("%Y-%m-%d")
+            recent_xp += history.get(day, 0)
+
+        has_role = role in member.roles
+
+        if level >= min_level and recent_xp >= min_xp_5d:
+            if not has_role:
+                try:
+                    await member.add_roles(role, reason="Active player role assigned")
+                    added_count += 1
+                except Exception:
+                    pass
+        else:
+            if has_role:
+                try:
+                    await member.remove_roles(role, reason="Active player role removed (inactive)")
+                    removed_count += 1
+                except Exception:
+                    pass
+
+    return added_count, removed_count
+
 
         role = guild.get_role(role_id)
         if not role:
