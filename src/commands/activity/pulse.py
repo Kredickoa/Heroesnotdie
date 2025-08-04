@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from models.db import get_database  # Імпорт за твоєю структурою
+from modules.db import get_database  # Імпорт за твоєю структурою
 
 db = get_database()
 
