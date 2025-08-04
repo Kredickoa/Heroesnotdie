@@ -1,3 +1,4 @@
+```python
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
@@ -18,10 +19,10 @@ class Pulse(commands.Cog):
     @app_commands.describe(
         role="Роль для активних гравців",
         min_level="Мінімальний рівень (за замовчуванням: 5)",
-        min_xp_5d="Мінімум XP за 5 днів (за замовчуванням: 500)"
+        min_xp_5d="Мінімум XP за 5 днів (за замовчуванням: 100)"
     )
     @app_commands.default_permissions(manage_roles=True)
-    async def pulse_setup(self, interaction: discord.Interaction, role: discord.Role, min_level: int = 5, min_xp_5d: int = 500):
+    async def pulse_setup(self, interaction: discord.Interaction, role: discord.Role, min_level: int = 5, min_xp_5d: int = 100):
         """Налаштувати систему Pulse з ролями та умовами активності"""
         if role.position >= interaction.guild.me.top_role.position:
             embed = discord.Embed(
@@ -60,7 +61,7 @@ class Pulse(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
-        # Перевірка та видача ролі одразу після налаштування для автора команди
+        # Перевірка та видача ролі одразу для автора команди
         member = interaction.user
         added, removed = await self._check_member_active_role(member, interaction.guild)
         if added > 0:
@@ -95,7 +96,7 @@ class Pulse(commands.Cog):
         )
         embed.add_field(name="Роль:", value=role.mention, inline=True)
         embed.add_field(name="Мін. рівень:", value=str(setting.get("min_level", 5)), inline=True)
-        embed.add_field(name="Мін. XP за 5 днів:", value=str(setting.get("min_xp_5d", 500)), inline=True)
+        embed.add_field(name="Мін. XP за 5 днів:", value=str(setting.get("min_xp_5d", 100)), inline=True)
         embed.add_field(name="Учасників з роллю:", value=str(len(role.members)), inline=True)
         
         await interaction.response.send_message(embed=embed)
@@ -155,65 +156,68 @@ class Pulse(commands.Cog):
         
         await interaction.edit_original_response(embed=embed)
 
-  async def _check_member_active_role(self, member, guild):
-    setting = await db.settings.find_one({"guild_id": str(guild.id)})
-    if not setting or "active_role_id" not in setting:
-        return 0, 0
+    async def _check_member_active_role(self, member, guild):
+        setting = await db.settings.find_one({"guild_id": str(guild.id)})
+        if not setting or "active_role_id" not in setting:
+            return 0, 0
 
-    role = guild.get_role(setting["active_role_id"])
-    if not role:
-        return 0, 0
+        role = guild.get_role(setting["active_role_id"])
+        if not role:
+            return 0, 0
 
-    min_level = setting.get("min_level", 5)
-    min_xp_5d = setting.get("min_xp_5d", 100)
-    cutoff_date = datetime.utcnow() - timedelta(days=5)
+        min_level = setting.get("min_level", 5)
+        min_xp_5d = setting.get("min_xp_5d", 100)
+        cutoff_date = datetime.utcnow() - timedelta(days=5)
 
-    user_data = await db.users.find_one({"guild_id": str(guild.id), "user_id": str(member.id)})
-    if not user_data:
-        if role in member.roles:
-            try:
-                await member.remove_roles(role, reason="Inactive (no profile)")
-                return 0, 1
-            except Exception:
-                return 0, 0
-        return 0, 0
+        user_data = await db.users.find_one({"guild_id": str(guild.id), "user_id": str(member.id)})
+        if not user_data:
+            if role in member.roles:
+                try:
+                    await member.remove_roles(role, reason="Inactive (no profile)")
+                    return 0, 1
+                except Exception:
+                    return 0, 0
+            return 0, 0
 
-    level = user_data.get("level", 0)
-    history = user_data.get("history", {})
-    recent_xp = sum(history.get((datetime.utcnow().date() - timedelta(days=i)).strftime("%Y-%m-%d"), 0) for i in range(5))
-    print(f"Checking {member.name}, level: {level}, xp: {recent_xp}")
+        level = user_data.get("level", 0)
+        history = user_data.get("history", {})
+        recent_xp = 0
+        for i in range(6):  # 5 днів назад + сьогодні
+            day = (datetime.utcnow().date() - timedelta(days=i)).strftime("%Y-%m-%d")
+            recent_xp += history.get(day, 0)
+        print(f"Checking {member.name}, level: {level}, recent_xp: {recent_xp}, history: {history}")
 
-    has_role = role in member.roles
-    added = 0
-    removed = 0
+        has_role = role in member.roles
+        added = 0
+        removed = 0
 
-    if level >= min_level and recent_xp >= min_xp_5d:
-        if not has_role:
-            try:
-                await member.add_roles(role, reason="Active player role assigned")
-                added = 1
-            except Exception as e:
-                print(f"Error adding role to {member.name}: {e}")
-    else:
-        if has_role:
-            try:
-                await member.remove_roles(role, reason="Active player role removed (inactive)")
-                removed = 1
-            except Exception as e:
-                print(f"Error removing role from {member.name}: {e}")
+        if level >= min_level and recent_xp >= min_xp_5d:
+            if not has_role:
+                try:
+                    await member.add_roles(role, reason="Active player role assigned")
+                    added = 1
+                except Exception as e:
+                    print(f"Error adding role to {member.name}: {e}")
+            else:
+                print(f"{member.name} already has role, no action needed")
+        else:
+            if has_role:
+                try:
+                    await member.remove_roles(role, reason="Active player role removed (inactive)")
+                    removed = 1
+                except Exception as e:
+                    print(f"Error removing role from {member.name}: {e}")
+            else:
+                print(f"{member.name} does not qualify, no action needed")
 
-    return added, removed
+        return added, removed
 
     async def _check_guild_active_roles(self, guild, setting):
         role_id = setting["active_role_id"]
-        min_level = setting.get("min_level", 5)
-        min_xp_5d = setting.get("min_xp_5d", 500)
-
         role = guild.get_role(role_id)
         if not role:
             return 0, 0
 
-        cutoff_date = datetime.utcnow() - timedelta(days=5)
         added_count = 0
         removed_count = 0
 
@@ -246,3 +250,4 @@ class Pulse(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(Pulse(bot))
+```
