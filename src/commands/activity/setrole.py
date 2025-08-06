@@ -2,12 +2,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord import Embed, Colour
-
-db = get_database()
+from modules.db import get_database  # Імпорт функції get_database з modules/db.py
 
 class RoleForLevelCommand(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.db = get_database()  # Ініціалізуємо базу даних
 
     @app_commands.command(name="setroleforlevel", description="Налаштувати роль для користувачів із певним рівнем")
     @app_commands.default_permissions(manage_roles=True)  # Тільки для адміністраторів
@@ -17,6 +17,11 @@ class RoleForLevelCommand(commands.Cog):
     )
     async def setroleforlevel(self, interaction: discord.Interaction, role: discord.Role, level: int):
         await interaction.response.defer(ephemeral=True)  # Відкладаємо відповідь
+
+        # Перевірка підключення до бази даних
+        if not self.db:
+            await interaction.followup.send("Помилка: не вдалося підключитися до бази даних!", ephemeral=True)
+            return
 
         guild = interaction.guild
         # Перевірка, чи бот має права керувати ролями
@@ -30,8 +35,8 @@ class RoleForLevelCommand(commands.Cog):
             return
 
         try:
-            # Отримуємо дані лідерборду з бази даних
-            leaderboard = db.leaderboard.find({"guild_id": str(guild.id)})
+            # Отримуємо дані лідерборду з колекції users
+            leaderboard = self.db.users.find({"guild_id": str(guild.id)})
             eligible_users = [user for user in leaderboard if user.get("level", 0) >= level]
 
             # Присвоюємо роль відповідним користувачам
@@ -42,8 +47,8 @@ class RoleForLevelCommand(commands.Cog):
                     await member.add_roles(role)
                     assigned_count += 1
 
-            # Зберігаємо налаштування ролі та рівня
-            db.role_assignments.update_one(
+            # Зберігаємо налаштування ролі та рівня в колекції role_assignments
+            self.db.role_assignments.update_one(
                 {"guild_id": str(guild.id)},
                 {"$set": {"role_id": str(role.id), "required_level": level}},
                 upsert=True
@@ -67,6 +72,7 @@ class RoleForLevelCommand(commands.Cog):
 
         except Exception as e:
             await interaction.followup.send(f"Сталася помилка: {str(e)}", ephemeral=True)
+            print(f"[ERROR] Помилка в команді setroleforlevel: {e}")
 
 async def setup(bot):
     await bot.add_cog(RoleForLevelCommand(bot))
