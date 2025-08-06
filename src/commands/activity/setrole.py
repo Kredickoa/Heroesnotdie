@@ -34,8 +34,16 @@ class RoleForLevelCommand(commands.Cog):
             return
 
         try:
-            # Отримуємо дані користувачів із колекції users
-            users = await db.users.find({"guild_id": str(guild.id)}).to_list(1000)
+            # Спробуємо знайти користувачів з guild_id як рядком і як числом
+            users_str = await db.users.find({"guild_id": str(guild.id)}).to_list(1000)
+            users_int = await db.users.find({"guild_id": guild.id}).to_list(1000)
+            
+            print(f"DEBUG: Users with string guild_id: {len(users_str)}")
+            print(f"DEBUG: Users with int guild_id: {len(users_int)}")
+            
+            # Використовуємо той варіант, де є користувачі
+            users = users_str if len(users_str) > 0 else users_int
+            
             eligible_users = [user for user in users if user.get("level", 0) >= level]
             
             # Дебаг інформація
