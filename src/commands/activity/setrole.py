@@ -8,7 +8,7 @@ class RoleForLevelCommand(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="setroleforlevel", description="Налаштувати роль для користувачів із певним рівнем")
-    @app_commands.default_permissions(manage_roles=True)  # Тільки для адміністраторів
+    @app_commands.default_permissions(manage_roles=True)
     @app_commands.describe(
         role="Роль, яку потрібно присвоїти користувачам",
         level="Мінімальний рівень для отримання ролі (наприклад, 5)"
@@ -41,7 +41,12 @@ class RoleForLevelCommand(commands.Cog):
             # Присвоюємо роль відповідним користувачам
             assigned_count = 0
             for user_data in eligible_users:
-                member = guild.get_member(user_data.get("user_id"))
+                # Конвертуємо user_id в int, якщо він зберігається як число
+                user_id = user_data.get("user_id")
+                if isinstance(user_id, str):
+                    user_id = int(user_id)
+                
+                member = guild.get_member(user_id)
                 if member and role not in member.roles:
                     await member.add_roles(role)
                     assigned_count += 1
@@ -53,13 +58,13 @@ class RoleForLevelCommand(commands.Cog):
                 upsert=True
             )
 
-            # Формуємо текстовий результат у стилі leaderboard
-            result_lines = [f"📊 НАЛАШТУВАННЯ РОЛІ ДЛЯ РІВНЯ\n"]
+            # Формуємо текстовий результат
+            result_lines = ["📊 НАЛАШТУВАННЯ РОЛІ ДЛЯ РІВНЯ"]
             result_lines.append(f"Роль {role.mention} призначена для користувачів із рівнем **{level}** і вище.")
             result_lines.append(f"Кількість користувачів, яким присвоєно роль: **{assigned_count}**.")
             result_lines.append(f"Налаштував: {interaction.user.display_name}")
 
-            result = "```\n" + "\n".join(result_lines) + "\n```"
+            result = "\n".join(result_lines)
             await interaction.followup.send(result)
 
         except Exception as e:
