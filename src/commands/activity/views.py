@@ -270,6 +270,5 @@ class ProfileView(discord.ui.View):
         await self.update_view(interaction)
         await interaction.response.edit_message(embed=embed, view=self)
 
-# Цей файл не потребує setup функції, тому що це не команда
 async def setup(bot):
-    pass
+    pass  # Views не потребують окремого завантаження як команди
