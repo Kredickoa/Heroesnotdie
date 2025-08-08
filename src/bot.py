@@ -38,8 +38,6 @@ intents.message_content = True
 # Initialize bot
 bot = commands.Bot(command_prefix=config.get("prefix", "!"), intents=intents)
 
-
-
 @bot.event
 async def on_ready():
     log.info(f"Bot {bot.user} is ready! Loaded {len(bot.cogs)} cogs")
@@ -53,14 +51,15 @@ async def setup_hook():
     # Collect all extensions
     if os.path.exists('./events'):
         for filename in os.listdir('./events'):
-            if filename.endswith('.py'):
+            if filename.endswith('.py') and not filename.startswith('_'):
                 extensions.append(('event', f'events.{filename[:-3]}', filename[:-3]))
     
     if os.path.exists('./commands'):
         for category in os.listdir('./commands'):
             if os.path.isdir(f'./commands/{category}'):
                 for filename in os.listdir(f'./commands/{category}'):
-                    if filename.endswith('.py'):
+                    # ВИПРАВЛЕННЯ: Ігноруємо файли, що починаються з '_'
+                    if filename.endswith('.py') and not filename.startswith('_'):
                         extensions.append(('command', f'commands.{category}.{filename[:-3]}', f'{category}.{filename[:-3]}'))
     
     # Load with progress bar
@@ -84,5 +83,3 @@ async def setup_hook():
     log.info("Synced slash commands globally")
 
 bot.run(TOKEN)
-    
-
