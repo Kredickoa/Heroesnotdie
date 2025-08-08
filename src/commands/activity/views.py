@@ -1,7 +1,8 @@
-# views.py - Всі UI компоненти (View класи з кнопками)
+# views.py - Оновлені UI компоненти для нової системи
 
 import discord
-from ._constants import SHOP_ITEMS
+from ._constants import SHOP_ITEMS, BATTLE_COMMENTS
+import random
 
 class DuelRequestView(discord.ui.View):
     def __init__(self, challenger, target, timeout=60):
@@ -9,32 +10,67 @@ class DuelRequestView(discord.ui.View):
         self.challenger = challenger
         self.target = target
 
-    @discord.ui.button(label="⚔️ Прийняти дуель", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="⚔️ Прийняти дуель", style=discord.ButtonStyle.success, emoji="🎯")
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.target:
-            await interaction.response.send_message("❌ Це не твій дуель!", ephemeral=True)
+            await interaction.response.send_message("❌ Це не твій дуель, спостерігач!", ephemeral=True)
             return
         
-        await interaction.response.edit_message(
-            content="⚔️ **Дуель розпочато!** Підготовка...",
-            view=None
+        # Створити ефектний embed прийняття
+        accept_embed = discord.Embed(
+            title="⚡ ДУЕЛЬ ПРИЙНЯТО!",
+            description=f"**{self.target.mention}** приймає виклик від **{self.challenger.mention}**!\n\n🔥 **Підготовка до бою...**",
+            color=0xE67E22
         )
+        accept_embed.set_footer(text="Система обирає першого стрільця...")
         
-        # Запуск дуелі
+        await interaction.response.edit_message(embed=accept_embed, view=None)
+        
+        # Запуск дуелі через секунду для драматичності
+        import asyncio
+        await asyncio.sleep(1)
+        
         duel_cog = interaction.client.get_cog("PidorDuelCommand")
         if duel_cog:
             await duel_cog.execute_duel(interaction, self.challenger, self.target)
 
-    @discord.ui.button(label="❌ Відхилити", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="❌ Відхилити", style=discord.ButtonStyle.danger, emoji="🏃")
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.target:
             await interaction.response.send_message("❌ Це не твій дуель!", ephemeral=True)
             return
 
-        await interaction.response.edit_message(
-            content=f"❌ {self.target.mention} відхилив дуель від {self.challenger.mention}. Слабак!",
-            view=None
+        decline_messages = [
+            f"❌ {self.target.mention} злякався дуелі з {self.challenger.mention}! Слабак! 🐔",
+            f"💨 {self.target.mention} втік від бою! {self.challenger.mention} залишається непереможним!",
+            f"🏃‍♂️ {self.target.mention} обрав життя замість слави! {self.challenger.mention} чекає наступного героя!",
+            f"😱 {self.target.mention} не готовий до такого рівня! {self.challenger.mention} шукає гідного опонента!"
+        ]
+
+        embed = discord.Embed(
+            title="🏃‍♂️ ДУЕЛЬ ВІДХИЛЕНО!",
+            description=random.choice(decline_messages),
+            color=0xE74C3C
         )
+        embed.set_footer(text="Можливо наступного разу буде сміливіше...")
+        
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    async def on_timeout(self):
+        timeout_embed = discord.Embed(
+            title="⏰ ЧАС ВИЙШОВ!",
+            description=f"{self.target.mention} не відповів на виклик від {self.challenger.mention}.\n\n😴 Мабуть, спить або втік!",
+            color=0x95A5A6
+        )
+        timeout_embed.set_footer(text="Час на відповідь: 60 секунд")
+        
+        try:
+            # Знайти оригінальне повідомлення та оновити його
+            message = None  # Треба передавати message до View
+            if hasattr(self, 'message') and self.message:
+                await self.message.edit(embed=timeout_embed, view=None)
+        except:
+            pass
 
 class DuelBattleView(discord.ui.View):
     def __init__(self, shooter, opponent, battle_info, duel_cog, interaction_obj):
@@ -46,14 +82,29 @@ class DuelBattleView(discord.ui.View):
         self.interaction_obj = interaction_obj
         self.shot_taken = False
 
-    @discord.ui.button(label="🔫 ПОСТРІЛ!", style=discord.ButtonStyle.danger, emoji="🎯")
+    @discord.ui.button(label="🔫 ПОСТРІЛ!", style=discord.ButtonStyle.danger, emoji="💥")
     async def shoot(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.shooter or self.shot_taken:
-            await interaction.response.send_message("❌ Не твоя черга стріляти!", ephemeral=True)
+            if interaction.user != self.shooter:
+                await interaction.response.send_message("❌ Не твоя черга стріляти, глядач!", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Ти вже стріляв!", ephemeral=True)
             return
         
         self.shot_taken = True
-        await interaction.response.edit_message(view=None)
+        
+        # Показати анімацію пострілу
+        shot_embed = discord.Embed(
+            title="💥 ПОСТРІЛ!",
+            description=f"**{self.shooter.mention}** стріляє...\n\n🎯 Визначається результат...",
+            color=0xE67E22
+        )
+        
+        await interaction.response.edit_message(embed=shot_embed, view=None)
+        
+        # Невелика затримка для напруги
+        import asyncio
+        await asyncio.sleep(1.5)
         
         # Обробити постріл
         await self.duel_cog.process_shot(
@@ -67,208 +118,106 @@ class DuelBattleView(discord.ui.View):
     async def on_timeout(self):
         # Якщо гравець не стрільнув - автоматичний промах
         if not self.shot_taken:
-            await self.duel_cog.process_shot(
-                self.interaction_obj,
-                self.shooter,
-                self.opponent, 
-                self.battle_info,
-                first_shot=True,
-                auto_miss=True
+            timeout_embed = discord.Embed(
+                title="⏰ ПРОСТРОЧЕНО!",
+                description=f"**{self.shooter.mention}** не встиг стрельнути вчасно!\n\n💔 Автоматичний промах!",
+                color=0x95A5A6
             )
-
-class ProfileView(discord.ui.View):
-    def __init__(self, user, target_user=None):
-        super().__init__(timeout=300)
-        self.user = user
-        self.target_user = target_user or user
-        self.current_page = "profile"
-
-    async def get_profile_embed(self, interaction):
-        profile_cog = interaction.client.get_cog("ProfileCommand")
-        stats = await profile_cog.get_user_stats(self.target_user.id, interaction.guild.id)
-        rank_info = profile_cog.get_rank_info(stats['wins'])
-        
-        embed = discord.Embed(
-            title=f"{rank_info['emoji']} Профіль гравця",
-            color=0x2F3136
-        )
-        
-        # Основна інформація
-        embed.add_field(
-            name="👤 Гравець", 
-            value=f"**{self.target_user.display_name}**", 
-            inline=True
-        )
-        
-        embed.add_field(
-            name="🏆 Ранг",
-            value=f"**{rank_info['name']}**",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="💰 Баланс",
-            value=f"**{stats['pk_balance']}** ПК",
-            inline=True
-        )
-        
-        # Статистика
-        win_rate = (stats['wins'] / max(stats['wins'] + stats['losses'], 1)) * 100
-        
-        embed.add_field(
-            name="📊 Статистика",
-            value=f"```\n⚔️ Перемоги: {stats['wins']}\n💀 Поразки: {stats['losses']}\n📈 Він-рейт: {win_rate:.1f}%```",
-            inline=False
-        )
-        
-        # Опис рангу
-        embed.add_field(
-            name="📝 Про гравця",
-            value=f"*{rank_info['description']}*",
-            inline=False
-        )
-        
-        max_slots = 1 + (stats['wins'] // 10)
-        embed.set_footer(
-            text=f"Слотів інвентарю: {len(stats['items'])}/{max_slots} • Макс. ПК: 1000"
-        )
-        embed.set_thumbnail(url=self.target_user.display_avatar.url)
-        
-        return embed
-
-    async def get_inventory_embed(self, interaction):
-        profile_cog = interaction.client.get_cog("ProfileCommand")
-        stats = await profile_cog.get_user_stats(self.target_user.id, interaction.guild.id)
-        
-        embed = discord.Embed(
-            title=f"🎒 Інвентар {self.target_user.display_name}",
-            color=0x7289DA
-        )
-        
-        if not stats['items']:
-            embed.description = "```\n📦 Інвентар порожній\n\n💡 Купіть предмети в магазині!```"
-        else:
-            items_text = "```\n"
-            for i, item_id in enumerate(stats['items'], 1):
-                if item_id in SHOP_ITEMS:
-                    item = SHOP_ITEMS[item_id]
-                    items_text += f"{i}. {item['name']}\n"
-                    items_text += f"   ✅ {item['buff']}\n"
-                    items_text += f"   ❌ {item['debuff']}\n\n"
-            items_text += "```"
-            embed.description = items_text
-        
-        max_slots = 1 + (stats['wins'] // 10)
-        embed.set_footer(text=f"Використано слотів: {len(stats['items'])}/{max_slots}")
-        embed.set_thumbnail(url=self.target_user.display_avatar.url)
-        
-        return embed
-
-    async def get_shop_embed(self, interaction):
-        profile_cog = interaction.client.get_cog("ProfileCommand")
-        stats = await profile_cog.get_user_stats(self.user.id, interaction.guild.id)
-        
-        embed = discord.Embed(
-            title="🛍️ МАГАЗИН ПРЕДМЕТІВ",
-            description=f"💰 **Ваш баланс: {stats['pk_balance']} ПК**",
-            color=0xF1C40F
-        )
-        
-        shop_text = "```\n"
-        for item_id, item in SHOP_ITEMS.items():
-            status = "✅" if stats['pk_balance'] >= item['price'] else "❌"
-            shop_text += f"{status} {item['name']} - {item['price']} ПК\n"
-            shop_text += f"   💚 {item['buff']}\n"
-            shop_text += f"   💔 {item['debuff']}\n\n"
-        shop_text += "```"
-        
-        embed.description += f"\n{shop_text}"
-        
-        max_slots = 1 + (stats['wins'] // 10)
-        embed.set_footer(text=f"Слотів інвентарю: {len(stats['items'])}/{max_slots}")
-        
-        return embed
-
-    async def update_view(self, interaction):
-        self.clear_items()
-        
-        # Кнопки навігації
-        profile_btn = discord.ui.Button(
-            label="👤 Профіль",
-            style=discord.ButtonStyle.primary if self.current_page == "profile" else discord.ButtonStyle.secondary,
-            disabled=self.current_page == "profile"
-        )
-        profile_btn.callback = self.show_profile
-        self.add_item(profile_btn)
-
-        inventory_btn = discord.ui.Button(
-            label="🎒 Інвентар", 
-            style=discord.ButtonStyle.primary if self.current_page == "inventory" else discord.ButtonStyle.secondary,
-            disabled=self.current_page == "inventory"
-        )
-        inventory_btn.callback = self.show_inventory
-        self.add_item(inventory_btn)
-
-        # Магазин тільки для власного профілю
-        if self.target_user == self.user:
-            shop_btn = discord.ui.Button(
-                label="🛍️ Магазин",
-                style=discord.ButtonStyle.primary if self.current_page == "shop" else discord.ButtonStyle.secondary,
-                disabled=self.current_page == "shop"
-            )
-            shop_btn.callback = self.show_shop
-            self.add_item(shop_btn)
-
-        # Кнопки покупки для магазину
-        if self.current_page == "shop" and self.target_user == self.user:
-            for i, (item_id, item) in enumerate(SHOP_ITEMS.items()):
-                row = 1 + (i // 5)  # 5 кнопок на ряд
-                btn = discord.ui.Button(
-                    label=f"{item['name']} ({item['price']} ПК)",
-                    custom_id=f"buy_{item_id}",
-                    style=discord.ButtonStyle.success,
-                    row=row
-                )
-                btn.callback = self.create_buy_callback(item_id)
-                self.add_item(btn)
-
-    def create_buy_callback(self, item_id):
-        async def buy_callback(interaction):
-            if interaction.user != self.user:
-                await interaction.response.send_message("❌ Це не ваш магазин!", ephemeral=True)
-                return
-
-            profile_cog = interaction.client.get_cog("ProfileCommand")
-            if profile_cog:
-                success = await profile_cog.buy_item_inline(interaction, item_id)
-                if success:
-                    embed = await self.get_shop_embed(interaction)
-                    await self.update_view(interaction)
-                    await interaction.edit_original_response(embed=embed, view=self)
-        
-        return buy_callback
-
-    async def show_profile(self, interaction):
-        self.current_page = "profile"
-        embed = await self.get_profile_embed(interaction)
-        await self.update_view(interaction)
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    async def show_inventory(self, interaction):
-        self.current_page = "inventory"
-        embed = await self.get_inventory_embed(interaction)
-        await self.update_view(interaction)
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    async def show_shop(self, interaction):
-        if self.target_user != self.user:
-            await interaction.response.send_message("❌ Магазин доступний тільки у власному профілі!", ephemeral=True)
-            return
             
-        self.current_page = "shop"
-        embed = await self.get_shop_embed(interaction)
-        await self.update_view(interaction)
-        await interaction.response.edit_message(embed=embed, view=self)
+            try:
+                await self.interaction_obj.edit_original_response(embed=timeout_embed, view=None)
+                
+                # Обробити як промах
+                import asyncio
+                await asyncio.sleep(2)
+                
+                await self.duel_cog.process_shot(
+                    self.interaction_obj,
+                    self.shooter,
+                    self.opponent, 
+                    self.battle_info,
+                    first_shot=True,
+                    auto_miss=True
+                )
+            except:
+                pass
+
+# Додаткові компоненти для майбутніх функцій
+class ConfirmationView(discord.ui.View):
+    """Підтвердження дій (для видалення предметів, скидання статистики тощо)"""
+    def __init__(self, user, action_text, timeout=30):
+        super().__init__(timeout=timeout)
+        self.user = user
+        self.action_text = action_text
+        self.confirmed = False
+
+    @discord.ui.button(label="✅ Підтвердити", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            await interaction.response.send_message("❌ Це не ваше рішення!", ephemeral=True)
+            return
+        
+        self.confirmed = True
+        self.stop()
+        
+        await interaction.response.edit_message(
+            content=f"✅ **Підтверджено!** {self.action_text}",
+            view=None
+        )
+
+    @discord.ui.button(label="❌ Скасувати", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            await interaction.response.send_message("❌ Це не ваше рішення!", ephemeral=True)
+            return
+        
+        self.stop()
+        
+        await interaction.response.edit_message(
+            content="❌ **Дію скасовано.**",
+            view=None
+        )
+
+class PaginationView(discord.ui.View):
+    """Універсальний компонент для пагінації"""
+    def __init__(self, pages, user, timeout=300):
+        super().__init__(timeout=timeout)
+        self.pages = pages
+        self.user = user
+        self.current_page = 0
+
+    @discord.ui.button(label="◀️", style=discord.ButtonStyle.secondary)
+    async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            await interaction.response.send_message("❌ Не ваша навігація!", ephemeral=True)
+            return
+        
+        if self.current_page > 0:
+            self.current_page -= 1
+            await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
+        else:
+            await interaction.response.send_message("❌ Це перша сторінка!", ephemeral=True)
+
+    @discord.ui.button(label="▶️", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            await interaction.response.send_message("❌ Не ваша навігація!", ephemeral=True)
+            return
+        
+        if self.current_page < len(self.pages) - 1:
+            self.current_page += 1
+            await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
+        else:
+            await interaction.response.send_message("❌ Це остання сторінка!", ephemeral=True)
+
+    @discord.ui.button(label="🔄 Оновити", style=discord.ButtonStyle.primary)
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            await interaction.response.send_message("❌ Не ваша навігація!", ephemeral=True)
+            return
+        
+        await interaction.response.edit_message(embed=self.pages[self.current_page], view=self)
+        await interaction.followup.send("🔄 Оновлено!", ephemeral=True)
 
 async def setup(bot):
-    pass  # Views не потребують окремого завантаження як команди
+    pass  # Views не потребують окремого завантаження
