@@ -3,7 +3,6 @@ from discord.ext import commands, tasks
 from datetime import datetime
 from modules.db import get_database
 
-LEVEL_UP_CHANNEL_NAME = "bots"
 db = get_database()
 
 async def get_user_data(guild_id, user_id):
@@ -41,10 +40,8 @@ async def level_up_check(message, user_data):
             "xp": user_data["xp"],
             "level": user_data["level"]
         })
-
-        channel = discord.utils.get(message.guild.text_channels, name=LEVEL_UP_CHANNEL_NAME)
-        if channel:
-            await channel.send(f"{message.author.mention} підвищив рівень до {user_data['level']}!")
+        
+        # Повідомлення про підвищення рівня видалено
 
 class ActivityEvents(commands.Cog):
     def __init__(self, bot):
