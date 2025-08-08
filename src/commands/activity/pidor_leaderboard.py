@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from typing import Dict
 from modules.db import get_database
-from .constants import RANKS, RANK_DESCRIPTIONS
+from ._constants import RANKS, RANK_DESCRIPTIONS
 
 db = get_database()
 

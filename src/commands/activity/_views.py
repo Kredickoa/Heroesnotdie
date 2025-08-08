@@ -1,7 +1,7 @@
 # views.py - Всі UI компоненти (View класи з кнопками)
 
 import discord
-from .constants import SHOP_ITEMS
+from ._constants import SHOP_ITEMS
 
 class DuelRequestView(discord.ui.View):
     def __init__(self, challenger, target, timeout=60):

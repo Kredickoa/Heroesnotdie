@@ -6,7 +6,7 @@ import random
 import asyncio
 from typing import Optional, Dict, List
 from modules.db import get_database
-from .constants import RANKS, RANK_DESCRIPTIONS, SHOP_ITEMS, RANDOM_EVENTS
+from ._constants import RANKS, RANK_DESCRIPTIONS, SHOP_ITEMS, RANDOM_EVENTS
 from .views import DuelRequestView, DuelBattleView
 
 db = get_database()
