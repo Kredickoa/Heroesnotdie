@@ -269,3 +269,4 @@ class ProfileView(discord.ui.View):
         embed = await self.get_shop_embed(interaction)
         await self.update_view(interaction)
         await interaction.response.edit_message(embed=embed, view=self)
+         async def setup(bot): pass
