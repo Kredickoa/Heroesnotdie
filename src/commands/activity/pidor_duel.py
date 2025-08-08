@@ -620,4 +620,282 @@ class DuelSystem(commands.Cog):
         if user_stats['pk_balance'] < item['price']:
             await interaction.response.send_message(
                 f"❌ Недостатньо ПК! Потрібно {item['price']} ПК, а у вас {user_stats['pk_balance']} ПК.",
-                ephemeral
+                ephemeral=True
+            )
+            return False
+        
+        # Перевірити слоти інвентарю
+        max_slots = 1 + (user_stats['wins'] // 10)
+        if len(user_stats['items']) >= max_slots:
+            await interaction.response.send_message(
+                f"❌ Інвентар заповнений! Доступно слотів: {max_slots}",
+                ephemeral=True
+            )
+            return False
+        
+        # Купити предмет
+        new_balance = user_stats['pk_balance'] - item['price']
+        new_items = user_stats['items'] + [item_id]
+        
+        await db.duel_stats.update_one(
+            {"user_id": str(interaction.user.id), "guild_id": interaction.guild.id},
+            {
+                "$set": {
+                    "pk_balance": new_balance,
+                    "items": new_items
+                }
+            }
+        )
+        
+        await interaction.followup.send(
+            f"✅ Куплено **{item['name']}** за {item['price']} ПК!\n"
+            f"Новий баланс: {new_balance} ПК",
+            ephemeral=True
+        )
+        return True
+
+    @app_commands.command(name="pidor_duel", description="Викликати користувача на дуель")
+    @app_commands.describe(user="Кого викликати на дуель (опціонально - буде обрано рандомного гравця)")
+    async def pidor_duel_command(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        challenger = interaction.user
+        
+        # Перевірити кулдаун
+        if not self.check_cooldown(challenger.id):
+            remaining = 30 - (datetime.now() - self.cooldowns[challenger.id]).total_seconds()
+            await interaction.response.send_message(
+                f"⏰ Кулдаун! Почекай ще {int(remaining)} секунд.",
+                ephemeral=True
+            )
+            return
+        
+        # Перевірити щоденний ліміт
+        if not await self.check_daily_limit(challenger.id, interaction.guild.id):
+            await interaction.response.send_message(
+                "📈 Досягнуто щоденний ліміт ПК (100/день). Спробуй завтра!",
+                ephemeral=True
+            )
+            return
+        
+        # Визначити опонента
+        if user:
+            target = user
+        else:
+            # Рандомний опонент
+            candidates = [
+                m for m in interaction.guild.members 
+                if not m.bot and m != challenger and m.status != discord.Status.offline
+            ]
+            if not candidates:
+                await interaction.response.send_message(
+                    "😴 Немає доступних гравців для дуелі.",
+                    ephemeral=True
+                )
+                return
+            target = random.choice(candidates)
+        
+        if target == challenger:
+            await interaction.response.send_message(
+                "🤡 Не можна викликати себе на дуель, генію!",
+                ephemeral=True
+            )
+            return
+        
+        if target.bot:
+            await interaction.response.send_message(
+                "🤖 Боти не дуелюються. Вони зайняті розумною діяльністю.",
+                ephemeral=True
+            )
+            return
+        
+        # Створити запит на дуель
+        view = DuelRequestView(challenger, target)
+        
+        challenger_stats = await self.get_user_stats(challenger.id, interaction.guild.id)
+        target_stats = await self.get_user_stats(target.id, interaction.guild.id)
+        
+        challenger_rank = self.get_rank_info(challenger_stats['wins'])
+        target_rank = self.get_rank_info(target_stats['wins'])
+        
+        embed = discord.Embed(
+            title="⚔️ ВИКЛИК НА ДУЕЛЬ!",
+            description=f"{challenger.mention} викликає {target.mention} на дуель!",
+            color=0xE67E22
+        )
+        
+        embed.add_field(
+            name=f"{challenger_rank['emoji']} Челленджер",
+            value=f"**{challenger.display_name}**\n{challenger_rank['name']}\nПеремоги: {challenger_stats['wins']}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name=f"{target_rank['emoji']} Опонент", 
+            value=f"**{target.display_name}**\n{target_rank['name']}\nПеремоги: {target_stats['wins']}",
+            inline=True
+        )
+        
+        embed.set_footer(text="У опонента є 60 секунд щоб відповісти!")
+        
+        await interaction.response.send_message(
+            content=f"{target.mention}, тебе викликають на дуель!",
+            embed=embed,
+            view=view
+        )
+
+    @app_commands.command(name="pidor_profile", description="Показати профіль гравця з інвентарем та магазином")
+    @app_commands.describe(user="Чий профіль показати (за замовчуванням - свій)")
+    async def pidor_profile_command(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        target_user = user or interaction.user
+        
+        view = ProfileView(interaction.user, target_user)
+        embed = await view.get_profile_embed(interaction)
+        await view.update_view(interaction)
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="pidor_leaderboard", description="Показати таблицю лідерів")
+    async def pidor_leaderboard_command(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        
+        # Отримати топ-15 гравців
+        top_players = await db.duel_stats.find(
+            {"guild_id": interaction.guild.id}
+        ).sort("wins", -1).limit(15).to_list(length=15)
+        
+        if not top_players:
+            embed = discord.Embed(
+                title="🏆 ТАБЛИЦЯ ЛІДЕРІВ",
+                description="```\n📊 Ще ніхто не проводив дуелей на цьому сервері!\n\nВикористовуйте /pidor_duel щоб розпочати!```",
+                color=0xF1C40F
+            )
+            await interaction.followup.send(embed=embed)
+            return
+        
+        embed = discord.Embed(
+            title="🏆 ТАБЛИЦЯ ЛІДЕРІВ",
+            color=0xF1C40F
+        )
+        
+        medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 12
+        
+        leaderboard_lines = ["📊 ТОП ДУЕЛЯНТІВ\n"]
+        author_found = False
+        
+        for i, player_stats in enumerate(top_players):
+            try:
+                user = interaction.guild.get_member(int(player_stats['user_id']))
+                if user:
+                    rank_info = self.get_rank_info(player_stats['wins'])
+                    win_rate = (player_stats['wins'] / max(player_stats['wins'] + player_stats['losses'], 1)) * 100
+                    
+                    line = (
+                        f"{medals[i]} {user.display_name:<15} | "
+                        f"{rank_info['emoji']} | "
+                        f"W: {player_stats['wins']:<3} | "
+                        f"WR: {win_rate:>5.1f}% | "
+                        f"ПК: {player_stats['pk_balance']:<3}"
+                    )
+                    leaderboard_lines.append(line)
+                    
+                    if player_stats['user_id'] == str(interaction.user.id):
+                        author_found = True
+            except (ValueError, AttributeError):
+                continue
+        
+        # Якщо автор не в топі, показати його позицію
+        if not author_found:
+            all_players = await db.duel_stats.find(
+                {"guild_id": interaction.guild.id}
+            ).sort("wins", -1).to_list(length=None)
+            
+            for i, player_stats in enumerate(all_players, 1):
+                if player_stats['user_id'] == str(interaction.user.id):
+                    rank_info = self.get_rank_info(player_stats['wins'])
+                    win_rate = (player_stats['wins'] / max(player_stats['wins'] + player_stats['losses'], 1)) * 100
+                    
+                    line = (
+                        f"\n--- ТИ НА {i} МІСЦІ ---\n"
+                        f"🎯 {interaction.user.display_name} | "
+                        f"{rank_info['emoji']} | "
+                        f"W: {player_stats['wins']} | "
+                        f"WR: {win_rate:.1f}% | "
+                        f"ПК: {player_stats['pk_balance']}"
+                    )
+                    leaderboard_lines.append(line)
+                    break
+        
+        embed.description = "```\n" + "\n".join(leaderboard_lines) + "\n```"
+        
+        # Статистика сервера
+        total_duels = await db.duel_history.count_documents({"guild_id": interaction.guild.id})
+        total_players = len(top_players)
+        
+        embed.set_footer(text=f"Всього дуелей: {total_duels} • Активних гравців: {total_players}")
+        
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="pidor_stats", description="Показати статистику дуелей сервера")
+    async def pidor_stats_command(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        
+        # Загальна статистика сервера
+        total_duels = await db.duel_history.count_documents({"guild_id": interaction.guild.id})
+        total_players = await db.duel_stats.count_documents({"guild_id": interaction.guild.id})
+        
+        # Найактивніший гравець
+        most_active = await db.duel_stats.find_one(
+            {"guild_id": interaction.guild.id},
+            sort=[("wins", -1), ("losses", -1)]
+        )
+        
+        embed = discord.Embed(
+            title="📈 СТАТИСТИКА ДУЕЛЕЙ СЕРВЕРА",
+            color=0x3498DB
+        )
+        
+        embed.add_field(
+            name="🎯 Загальна статистика",
+            value=f"```\n⚔️ Всього дуелей: {total_duels}\n👥 Активних гравців: {total_players}```",
+            inline=False
+        )
+        
+        if most_active:
+            try:
+                user = interaction.guild.get_member(int(most_active['user_id']))
+                if user:
+                    rank_info = self.get_rank_info(most_active['wins'])
+                    embed.add_field(
+                        name="👑 Найактивніший гравець",
+                        value=f"```\n{user.display_name} {rank_info['emoji']}\n⚔️ Перемоги: {most_active['wins']}\n💀 Поразки: {most_active['losses']}\n💰 ПК: {most_active['pk_balance']}```",
+                        inline=True
+                    )
+            except:
+                pass
+        
+        # Останні дуелі
+        recent_duels = await db.duel_history.find(
+            {"guild_id": interaction.guild.id}
+        ).sort("timestamp", -1).limit(5).to_list(length=5)
+        
+        if recent_duels:
+            recent_lines = ["🕐 ОСТАННІ ДУЕЛІ\n"]
+            for duel in recent_duels:
+                try:
+                    winner = interaction.guild.get_member(int(duel['winner']))
+                    loser = interaction.guild.get_member(int(duel['loser']))
+                    if winner and loser:
+                        recent_lines.append(f"• {winner.display_name} > {loser.display_name}")
+                except:
+                    continue
+            
+            if len(recent_lines) > 1:
+                embed.add_field(
+                    name="⏰ Нещодавні бої",
+                    value="```\n" + "\n".join(recent_lines) + "```",
+                    inline=False
+                )
+        
+        await interaction.followup.send(embed=embed)
+
+async def setup(bot):
+    await bot.add_cog(DuelSystem(bot))
