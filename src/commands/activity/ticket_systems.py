@@ -129,38 +129,30 @@ class TicketTypeSelect(discord.ui.Select):
         ticket_type = self.values[0]
         guild_config = await get_guild_config(interaction.guild.id)
         
-    if ticket_type == "role_application":
-    # Якщо це заявка на роль - показуємо вибір ролей
-    if not guild_config["available_roles"]:
-        await interaction.response.send_message(
-            "Адміністратори ще не налаштували доступні ролі для заявок.", 
-            ephemeral=True
-        )
-        return
-    
-    # Отримуємо доступні ролі
-    available_roles = []
-    for role_id in guild_config["available_roles"]:
-        role = interaction.guild.get_role(role_id)
-        if role and not role.is_bot_managed():
-            available_roles.append(role)
-    
-    if not available_roles:
-        await interaction.response.send_message(
-            "Всі налаштовані ролі недоступні або видалені.", 
-            ephemeral=True
-        )
-        return
-    
-    view = RoleSelectView(interaction.guild, available_roles)
-    embed = discord.Embed(
-        title="Заявка на роль",
-        description="Оберіть роль, на яку хочете подати заявку:",
-        color=0x2b2d31
-    )
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        if ticket_type == "role_application":
+            # Якщо це заявка на роль - показуємо вибір ролей
+            if not guild_config["available_roles"]:
+                await interaction.response.send_message(
+                    "Адміністратори ще не налаштували доступні ролі для заявок.", 
+                    ephemeral=True
+                )
+                return
             
-            view = RoleSelectView(interaction.guild)
+            # Отримуємо доступні ролі
+            available_roles = []
+            for role_id in guild_config["available_roles"]:
+                role = interaction.guild.get_role(role_id)
+                if role and not role.is_bot_managed():
+                    available_roles.append(role)
+            
+            if not available_roles:
+                await interaction.response.send_message(
+                    "Всі налаштовані ролі недоступні або видалені.", 
+                    ephemeral=True
+                )
+                return
+            
+            view = RoleSelectView(interaction.guild, available_roles)
             embed = discord.Embed(
                 title="Заявка на роль",
                 description="Оберіть роль, на яку хочете подати заявку:",
@@ -429,258 +421,7 @@ class RoleSelect(discord.ui.Select):
                 description="Оберіть роль, на яку хочете подати заявку:",
                 color=0x2b2d31
             )
-            await interaction.response.edit_message(embed=embed, view=view)
-            return
-        
-        role_id_str = self.values[0]
-        
-        if role_id_str == "no_roles":
-            await interaction.response.send_message("Немає доступних ролей для заявки!", ephemeral=True)
-            return
-        
-        role_id = int(role_id_str)
-        role = interaction.guild.get_role(role_id)
-        
-        if not role:
-            await interaction.response.send_message("Роль не знайдена!", ephemeral=True)
-            return
-        
-        # Перевіряємо чи вже має роль
-        if role in interaction.user.roles:
-            await interaction.response.send_message(
-                f"У вас вже є роль {role.mention}!", 
-                ephemeral=True
-            )
-            return
-        
-        # Створюємо тікет для заявки на роль
-        ticket_select = TicketTypeSelect()
-        await ticket_select.create_ticket(interaction, "role_application", role_id)
-
-class TicketMainView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(TicketTypeSelect())
-
-class RoleSelectView(discord.ui.View):
-    def __init__(self, guild: discord.Guild = None, available_roles: list = None):
-        super().__init__(timeout=600)  # 10 хвилин
-        if guild and available_roles is not None:
-            options = []
-            
-            # Сортуємо за позицією (вищі ролі першими)
-            available_roles.sort(key=lambda r: r.position, reverse=True)
-            
-            # Беремо перші 25 ролей (обмеження Discord)
-            for role in available_roles[:25]:
-                options.append(
-                    discord.SelectOption(
-                        label=role.name,
-                        description=f"Подати заявку на роль {role.name}",
-                        value=str(role.id)
-                    )
-                )
-            
-            if not options:
-                options.append(
-                    discord.SelectOption(
-                        label="Немає доступних ролей",
-                        description="Зверніться до адміністрації",
-                        value="no_roles"
-                    )
-                )
-            
-            select = discord.ui.Select(
-                placeholder="Оберіть роль...",
-                options=options,
-                min_values=1,
-                max_values=1
-            )
-            
-            async def select_callback(select_interaction):
-                role_id_str = select.values[0]
-                
-                if role_id_str == "no_roles":
-                    await select_interaction.response.send_message("Немає доступних ролей для заявки!", ephemeral=True)
-                    return
-                
-                role_id = int(role_id_str)
-                role = select_interaction.guild.get_role(role_id)
-                
-                if not role:
-                    await select_interaction.response.send_message("Роль не знайдена!", ephemeral=True)
-                    return
-                
-                # Перевіряємо чи вже має роль
-                if role in select_interaction.user.roles:
-                    await select_interaction.response.send_message(
-                        f"У вас вже є роль {role.mention}!", 
-                        ephemeral=True
-                    )
-                    return
-                
-                # Створюємо тікет для заявки на роль
-                ticket_select = TicketTypeSelect()
-                await ticket_select.create_ticket(select_interaction, "role_application", role_id)
-            
-            select.callback = select_callback
-            self.add_item(select)
-
-class RoleApplicationButtons(discord.ui.View):
-    def __init__(self, role_id: int = None, user_id: int = None, channel_id: int = None):
-        super().__init__(timeout=None)
-        self.role_id = role_id
-        self.user_id = user_id
-        self.channel_id = channel_id
-    
-    @discord.ui.button(label="Схвалити заявку", style=discord.ButtonStyle.green, custom_id="approve_role_application")
-    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild_config = await get_guild_config(interaction.guild.id)
-        
-        # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
-            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
-            return
-        
-        # Отримуємо дані з бази якщо не передано
-        if not self.role_id or not self.user_id:
-            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
-            if ticket_data:
-                self.role_id = ticket_data.get("role_id")
-                self.user_id = ticket_data.get("user_id")
-        
-        if not self.role_id or not self.user_id:
-            await interaction.response.send_message("Дані тікета не знайдено в базі даних. Використайте /close_ticket", ephemeral=True)
-            return
-        
-        user = interaction.guild.get_member(self.user_id)
-        if not user:
-            await interaction.response.send_message("Користувач не знайдений на сервері!", ephemeral=True)
-            return
-        
-        # Знаходимо роль
-        role = interaction.guild.get_role(self.role_id)
-        if not role:
-            await interaction.response.send_message("Роль не знайдена!", ephemeral=True)
-            return
-        
-        try:
-            await user.add_roles(role, reason=f"Схвалено модератором {interaction.user}")
-            
-            # Оновлюємо статус тікета в базі
-            await db.tickets.update_one(
-                {"channel_id": interaction.channel.id},
-                {"$set": {"status": "approved", "approved_by": interaction.user.id, "approved_at": datetime.now()}}
-            )
-            
-            # Повідомлення в тікеті
-            embed = discord.Embed(
-                title="Заявку схвалено",
-                description=f"**Користувач:** {user.mention}\n**Роль:** {role.mention}\n**Модератор:** {interaction.user.mention}",
-                color=0x57f287,
-                timestamp=datetime.now()
-            )
-            embed.add_field(
-                name="Вітаємо",
-                value=f"Роль **{role.name}** успішно додано до профілю користувача",
-                inline=False
-            )
-            
             await interaction.response.edit_message(embed=embed, view=TicketCloseView())
-            
-            # DM користувачу
-            try:
-                dm_embed = discord.Embed(
-                    title="Заявку схвалено",
-                    description=f"Вашу заявку на роль **{role.name}** схвалено\n\n" +
-                               f"Сервер: **{interaction.guild.name}**\n" +
-                               f"Роль додано до вашого профілю\n" +
-                               f"Модератор: {interaction.user.mention}",
-                    color=0x57f287
-                )
-                await user.send(embed=dm_embed)
-            except:
-                # Якщо не може відправити DM - повідомляємо в каналі
-                await interaction.followup.send(
-                    f"{user.mention}, не вдалося відправити повідомлення в ПП. " +
-                    f"Ваша заявка схвалена і роль {role.mention} додано!",
-                    ephemeral=False
-                )
-            
-        except Exception as e:
-            await interaction.response.send_message(f"Помилка додавання ролі: {e}", ephemeral=True)
-    
-    @discord.ui.button(label="Відхилити заявку", style=discord.ButtonStyle.red, custom_id="reject_role_application")
-    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild_config = await get_guild_config(interaction.guild.id)
-        
-        # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
-            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
-            return
-        
-        # Отримуємо дані з бази якщо не передано
-        if not self.role_id or not self.user_id:
-            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
-            if ticket_data:
-                self.role_id = ticket_data.get("role_id")
-                self.user_id = ticket_data.get("user_id")
-        
-        # Modal для причини відхилення
-        modal = RejectModal(self.role_id, self.user_id, interaction.channel.id)
-        await interaction.response.send_modal(modal)
-
-class GeneralTicketButtons(discord.ui.View):
-    def __init__(self, ticket_type: str = None, user_id: int = None, channel_id: int = None):
-        super().__init__(timeout=None)
-        self.ticket_type = ticket_type
-        self.user_id = user_id
-        self.channel_id = channel_id
-    
-    @discord.ui.button(label="Вирішено", style=discord.ButtonStyle.green, custom_id="resolve_general_ticket")
-    async def resolve(self, interaction: discord.Interaction, button: discord.ui.Button):
-        guild_config = await get_guild_config(interaction.guild.id)
-        
-        # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
-            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
-            return
-        
-        # Отримуємо дані з бази якщо не передано
-        if not self.ticket_type or not self.user_id:
-            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
-            if ticket_data:
-                self.ticket_type = ticket_data.get("ticket_type")
-                self.user_id = ticket_data.get("user_id")
-        
-        if not self.ticket_type or not self.user_id:
-            await interaction.response.send_message("Дані тікета не знайдено в базі даних.", ephemeral=True)
-            return
-        
-        user = interaction.guild.get_member(self.user_id)
-        config = TICKET_TYPES.get(self.ticket_type, {"name": "Невідомий тип"})
-        
-        # Оновлюємо статус тікета в базі
-        await db.tickets.update_one(
-            {"channel_id": interaction.channel.id},
-            {"$set": {"status": "resolved", "resolved_by": interaction.user.id, "resolved_at": datetime.now()}}
-        )
-        
-        embed = discord.Embed(
-            title="Тікет вирішено",
-            description=f"**Користувач:** {user.mention if user else 'Користувач покинув сервер'}\n" +
-                       f"**Тип тікета:** {config['name']}\n" +
-                       f"**Модератор:** {interaction.user.mention}",
-            color=0x57f287,
-            timestamp=datetime.now()
-        )
-        embed.add_field(
-            name="Статус",
-            value="Тікет успішно вирішено та готовий до закриття",
-            inline=False
-        )
-        
-        await interaction.response.edit_message(embed=embed, view=TicketCloseView())
         
         # DM користувачу
         if user:
@@ -954,6 +695,7 @@ class MultiRoleView(discord.ui.View):
             pass
         
         return True
+
 class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -1156,7 +898,7 @@ class TicketSystem(commands.Cog):
                 else:
                     roles_list.append(f"{i}. Роль видалена (ID: {role_id})")
             
-# Очищуємо неіснуючі ролі
+            # Очищуємо неіснуючі ролі
             if len(valid_roles) != len(guild_config["available_roles"]):
                 await update_guild_config(interaction.guild.id, {"available_roles": valid_roles})
             
@@ -1380,4 +1122,255 @@ class ConfirmCloseView(discord.ui.View):
 
 async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
-    print("Ticket System з базою даних завантажено")
+    print("Ticket System з базою даних завантажено")=view)
+            return
+        
+        role_id_str = self.values[0]
+        
+        if role_id_str == "no_roles":
+            await interaction.response.send_message("Немає доступних ролей для заявки!", ephemeral=True)
+            return
+        
+        role_id = int(role_id_str)
+        role = interaction.guild.get_role(role_id)
+        
+        if not role:
+            await interaction.response.send_message("Роль не знайдена!", ephemeral=True)
+            return
+        
+        # Перевіряємо чи вже має роль
+        if role in interaction.user.roles:
+            await interaction.response.send_message(
+                f"У вас вже є роль {role.mention}!", 
+                ephemeral=True
+            )
+            return
+        
+        # Створюємо тікет для заявки на роль
+        ticket_select = TicketTypeSelect()
+        await ticket_select.create_ticket(interaction, "role_application", role_id)
+
+class TicketMainView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(TicketTypeSelect())
+
+class RoleSelectView(discord.ui.View):
+    def __init__(self, guild: discord.Guild = None, available_roles: list = None):
+        super().__init__(timeout=600)  # 10 хвилин
+        if guild and available_roles is not None:
+            options = []
+            
+            # Сортуємо за позицією (вищі ролі першими)
+            available_roles.sort(key=lambda r: r.position, reverse=True)
+            
+            # Беремо перші 25 ролей (обмеження Discord)
+            for role in available_roles[:25]:
+                options.append(
+                    discord.SelectOption(
+                        label=role.name,
+                        description=f"Подати заявку на роль {role.name}",
+                        value=str(role.id)
+                    )
+                )
+            
+            if not options:
+                options.append(
+                    discord.SelectOption(
+                        label="Немає доступних ролей",
+                        description="Зверніться до адміністрації",
+                        value="no_roles"
+                    )
+                )
+            
+            select = discord.ui.Select(
+                placeholder="Оберіть роль...",
+                options=options,
+                min_values=1,
+                max_values=1
+            )
+            
+            async def select_callback(select_interaction):
+                role_id_str = select.values[0]
+                
+                if role_id_str == "no_roles":
+                    await select_interaction.response.send_message("Немає доступних ролей для заявки!", ephemeral=True)
+                    return
+                
+                role_id = int(role_id_str)
+                role = select_interaction.guild.get_role(role_id)
+                
+                if not role:
+                    await select_interaction.response.send_message("Роль не знайдена!", ephemeral=True)
+                    return
+                
+                # Перевіряємо чи вже має роль
+                if role in select_interaction.user.roles:
+                    await select_interaction.response.send_message(
+                        f"У вас вже є роль {role.mention}!", 
+                        ephemeral=True
+                    )
+                    return
+                
+                # Створюємо тікет для заявки на роль
+                ticket_select = TicketTypeSelect()
+                await ticket_select.create_ticket(select_interaction, "role_application", role_id)
+            
+            select.callback = select_callback
+            self.add_item(select)
+
+class RoleApplicationButtons(discord.ui.View):
+    def __init__(self, role_id: int = None, user_id: int = None, channel_id: int = None):
+        super().__init__(timeout=None)
+        self.role_id = role_id
+        self.user_id = user_id
+        self.channel_id = channel_id
+    
+    @discord.ui.button(label="Схвалити заявку", style=discord.ButtonStyle.green, custom_id="approve_role_application")
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
+        # Перевіряємо права
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
+            return
+        
+        # Отримуємо дані з бази якщо не передано
+        if not self.role_id or not self.user_id:
+            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
+            if ticket_data:
+                self.role_id = ticket_data.get("role_id")
+                self.user_id = ticket_data.get("user_id")
+        
+        if not self.role_id or not self.user_id:
+            await interaction.response.send_message("Дані тікета не знайдено в базі даних. Використайте /close_ticket", ephemeral=True)
+            return
+        
+        user = interaction.guild.get_member(self.user_id)
+        if not user:
+            await interaction.response.send_message("Користувач не знайдений на сервері!", ephemeral=True)
+            return
+        
+        # Знаходимо роль
+        role = interaction.guild.get_role(self.role_id)
+        if not role:
+            await interaction.response.send_message("Роль не знайдена!", ephemeral=True)
+            return
+        
+        try:
+            await user.add_roles(role, reason=f"Схвалено модератором {interaction.user}")
+            
+            # Оновлюємо статус тікета в базі
+            await db.tickets.update_one(
+                {"channel_id": interaction.channel.id},
+                {"$set": {"status": "approved", "approved_by": interaction.user.id, "approved_at": datetime.now()}}
+            )
+            
+            # Повідомлення в тікеті
+            embed = discord.Embed(
+                title="Заявку схвалено",
+                description=f"**Користувач:** {user.mention}\n**Роль:** {role.mention}\n**Модератор:** {interaction.user.mention}",
+                color=0x57f287,
+                timestamp=datetime.now()
+            )
+            embed.add_field(
+                name="Вітаємо",
+                value=f"Роль **{role.name}** успішно додано до профілю користувача",
+                inline=False
+            )
+            
+            await interaction.response.edit_message(embed=embed, view=TicketCloseView())
+            
+            # DM користувачу
+            try:
+                dm_embed = discord.Embed(
+                    title="Заявку схвалено",
+                    description=f"Вашу заявку на роль **{role.name}** схвалено\n\n" +
+                               f"Сервер: **{interaction.guild.name}**\n" +
+                               f"Роль додано до вашого профілю\n" +
+                               f"Модератор: {interaction.user.mention}",
+                    color=0x57f287
+                )
+                await user.send(embed=dm_embed)
+            except:
+                # Якщо не може відправити DM - повідомляємо в каналі
+                await interaction.followup.send(
+                    f"{user.mention}, не вдалося відправити повідомлення в ПП. " +
+                    f"Ваша заявка схвалена і роль {role.mention} додано!",
+                    ephemeral=False
+                )
+            
+        except Exception as e:
+            await interaction.response.send_message(f"Помилка додавання ролі: {e}", ephemeral=True)
+    
+    @discord.ui.button(label="Відхилити заявку", style=discord.ButtonStyle.red, custom_id="reject_role_application")
+    async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
+        # Перевіряємо права
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
+            return
+        
+        # Отримуємо дані з бази якщо не передано
+        if not self.role_id or not self.user_id:
+            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
+            if ticket_data:
+                self.role_id = ticket_data.get("role_id")
+                self.user_id = ticket_data.get("user_id")
+        
+        # Modal для причини відхилення
+        modal = RejectModal(self.role_id, self.user_id, interaction.channel.id)
+        await interaction.response.send_modal(modal)
+
+class GeneralTicketButtons(discord.ui.View):
+    def __init__(self, ticket_type: str = None, user_id: int = None, channel_id: int = None):
+        super().__init__(timeout=None)
+        self.ticket_type = ticket_type
+        self.user_id = user_id
+        self.channel_id = channel_id
+    
+    @discord.ui.button(label="Вирішено", style=discord.ButtonStyle.green, custom_id="resolve_general_ticket")
+    async def resolve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
+        # Перевіряємо права
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
+            return
+        
+        # Отримуємо дані з бази якщо не передано
+        if not self.ticket_type or not self.user_id:
+            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
+            if ticket_data:
+                self.ticket_type = ticket_data.get("ticket_type")
+                self.user_id = ticket_data.get("user_id")
+        
+        if not self.ticket_type or not self.user_id:
+            await interaction.response.send_message("Дані тікета не знайдено в базі даних.", ephemeral=True)
+            return
+        
+        user = interaction.guild.get_member(self.user_id)
+        config = TICKET_TYPES.get(self.ticket_type, {"name": "Невідомий тип"})
+        
+        # Оновлюємо статус тікета в базі
+        await db.tickets.update_one(
+            {"channel_id": interaction.channel.id},
+            {"$set": {"status": "resolved", "resolved_by": interaction.user.id, "resolved_at": datetime.now()}}
+        )
+        
+        embed = discord.Embed(
+            title="Тікет вирішено",
+            description=f"**Користувач:** {user.mention if user else 'Користувач покинув сервер'}\n" +
+                       f"**Тип тікета:** {config['name']}\n" +
+                       f"**Модератор:** {interaction.user.mention}",
+            color=0x57f287,
+            timestamp=datetime.now()
+        )
+        embed.add_field(
+            name="Статус",
+            value="Тікет успішно вирішено та готовий до закриття",
+            inline=False
+        )
+        
+        await interaction.response.edit_message(embed=embed, view
