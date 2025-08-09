@@ -1121,21 +1121,6 @@ async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
     print("Ticket System з базою даних завантажено")
         
-        elif action == "show_config":
-    # Показуємо поточну конфігурацію
-    mod_role_id = guild_config.get("moderator_role_id")
-    log_channel_id = guild_config.get("log_channel_id") 
-    category_id = guild_config.get("category_id")
-    
-    mod_role = interaction.guild.get_role(mod_role_id) if mod_role_id else None
-    log_ch = interaction.guild.get_channel(log_channel_id) if log_channel_id else None
-    cat = interaction.guild.get_channel(category_id) if category_id else None
-
-    embed = discord.Embed(
-        title="Поточна конфігурація",
-        color=0x2b2d31
-    )
-
     embed.add_field(
         name="Роль модераторів",
         value=mod_role.mention if mod_role else "Не налаштовано",
