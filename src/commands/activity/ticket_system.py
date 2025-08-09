@@ -9,8 +9,14 @@ from typing import Optional
 # Конфігурація
 CONFIG = {
     "MODERATOR_ROLE_ID": 123456789012345678,  # ID ролі модераторів
-    "CATEGORY_ID": 123456789012345678,        # ID категорії для тікетів
+    "CATEGORY_ID": None,                      # Буде знайдено автоматично або створено
     "LOG_CHANNEL_ID": 123456789012345678,     # ID каналу логів (опціонально)
+    
+    # Ролі які можна отримати через заявку (залиште пустим щоб показати всі ролі сервера)
+    "AVAILABLE_ROLES": [
+        # 123456789012345678,  # ID ролі 1
+        # 123456789012345678,  # ID ролі 2
+    ]
 }
 
 # Типи тікетів
@@ -19,38 +25,12 @@ TICKET_TYPES = {
         "name": "🎭 Заявка на роль",
         "emoji": "🎭",
         "description": "Подати заявку на отримання ролі",
-        "roles": {
-            "designer": {
-                "name": "🎨 Designer",
-                "role_id": 123456789012345678,
-                "questions": [
-                    "Покажіть приклади своїх робіт (посилання на портфоліо):",
-                    "Скільки років досвіду у дизайні?",
-                    "Які програми використовуєте?",
-                    "Чому хочете отримати цю роль?"
-                ]
-            },
-            "developer": {
-                "name": "💻 Developer", 
-                "role_id": 123456789012345678,
-                "questions": [
-                    "Які мови програмування знаєте?",
-                    "Покажіть приклади коду або проектів:",
-                    "Скільки років досвіду в програмуванні?",
-                    "Чому хочете отримати цю роль?"
-                ]
-            },
-            "moderator": {
-                "name": "🛡️ Moderator",
-                "role_id": 123456789012345678,
-                "questions": [
-                    "Чому хочете стати модератором?",
-                    "Як будете вирішувати конфлікти?",
-                    "Скільки часу готові приділяти модерації?",
-                    "Ваш досвід у модерації?"
-                ]
-            }
-        }
+        "questions": [
+            "Чому ви хочете отримати цю роль?",
+            "Чи маєте ви досвід, пов'язаний з цією роллю?",
+            "Як ви плануєте використовувати цю роль?",
+            "Додаткова інформація про себе:"
+        ]
     },
     "server_suggestion": {
         "name": "💡 Пропозиція для сервера",
@@ -112,7 +92,7 @@ class TicketTypeSelect(discord.ui.Select):
         
         if ticket_type == "role_application":
             # Якщо це заявка на роль - показуємо вибір ролей
-            view = RoleSelectView()
+            view = RoleSelectView(interaction.guild)
             embed = discord.Embed(
                 title="🎭 Заявка на роль",
                 description="Оберіть роль, на яку хочете подати заявку:",
@@ -123,35 +103,55 @@ class TicketTypeSelect(discord.ui.Select):
             # Для інших типів - відразу створюємо тікет
             await self.create_ticket(interaction, ticket_type)
     
-    async def create_ticket(self, interaction: discord.Interaction, ticket_type: str, role_key: str = None):
+    async def create_ticket(self, interaction: discord.Interaction, ticket_type: str, role_id: int = None):
         config = TICKET_TYPES[ticket_type]
         
         # Назва тікета
-        if role_key:
-            ticket_name = f"{config['roles'][role_key]['name']}-{interaction.user.display_name}"
-            questions = config['roles'][role_key]['questions']
+        if role_id:
+            role = interaction.guild.get_role(role_id)
+            ticket_name = f"role-{role.name if role else 'unknown'}-{interaction.user.display_name}"
+            questions = config['questions']
         else:
-            ticket_name = f"{config['name']}-{interaction.user.display_name}"
+            ticket_name = f"{ticket_type}-{interaction.user.display_name}"
             questions = config['questions']
         
-        # Створюємо приватний канал
-        category = interaction.guild.get_channel(CONFIG["CATEGORY_ID"])
+        # Знаходимо або створюємо категорію
+        category = None
+        if CONFIG["CATEGORY_ID"]:
+            category = interaction.guild.get_channel(CONFIG["CATEGORY_ID"])
+        
         if not category:
-            await interaction.response.send_message("❌ Категорія для тікетів не знайдена!", ephemeral=True)
-            return
+            # Шукаємо категорію з назвою "Tickets" або створюємо нову
+            for cat in interaction.guild.categories:
+                if cat.name.lower() in ["tickets", "тікети", "тикеты"]:
+                    category = cat
+                    CONFIG["CATEGORY_ID"] = cat.id
+                    break
+            
+            if not category:
+                try:
+                    category = await interaction.guild.create_category("🎫 Tickets")
+                    CONFIG["CATEGORY_ID"] = category.id
+                except:
+                    await interaction.response.send_message("❌ Не вдалося створити категорію для тікетів!", ephemeral=True)
+                    return
         
         # Права доступу
         overwrites = {
             interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
             interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            interaction.guild.get_role(CONFIG["MODERATOR_ROLE_ID"]): discord.PermissionOverwrite(
+        }
+        
+        # Додаємо права модераторам
+        mod_role = interaction.guild.get_role(CONFIG["MODERATOR_ROLE_ID"])
+        if mod_role:
+            overwrites[mod_role] = discord.PermissionOverwrite(
                 read_messages=True, send_messages=True, manage_messages=True
             )
-        }
         
         try:
             channel = await category.create_text_channel(
-                name=ticket_name.lower().replace(" ", "-"),
+                name=ticket_name.lower().replace(" ", "-")[:50],  # Обмежуємо довжину
                 overwrites=overwrites
             )
             
@@ -162,6 +162,15 @@ class TicketTypeSelect(discord.ui.Select):
                 color=discord.Color.green(),
                 timestamp=datetime.now()
             )
+            
+            if role_id:
+                role = interaction.guild.get_role(role_id)
+                embed.add_field(
+                    name="🎯 Роль",
+                    value=f"{role.mention if role else 'Невідома роль'}",
+                    inline=True
+                )
+            
             embed.add_field(
                 name="📝 Інструкція",
                 value="Модератор поставить вам питання. Відповідайте чесно та детально.",
@@ -171,12 +180,12 @@ class TicketTypeSelect(discord.ui.Select):
             
             # Створюємо view з кнопками для модерації
             if ticket_type == "role_application":
-                view = RoleApplicationButtons(role_key, interaction.user.id)
+                view = RoleApplicationButtons(role_id, interaction.user.id)
             else:
                 view = GeneralTicketButtons(ticket_type, interaction.user.id)
             
             message = await channel.send(
-                f"👋 {interaction.user.mention} | 🛡️ <@&{CONFIG['MODERATOR_ROLE_ID']}>",
+                f"👋 {interaction.user.mention} | 🛡️ {mod_role.mention if mod_role else '@Модерація'}",
                 embed=embed,
                 view=view
             )
@@ -190,10 +199,18 @@ class TicketTypeSelect(discord.ui.Select):
                 description=f"Ваш тікет створено в {channel.mention}\nМодерація незабаром з вами зв'яжется.",
                 color=discord.Color.green()
             )
-            await interaction.response.edit_message(embed=success_embed, view=None)
+            
+            if hasattr(interaction, 'edit_original_response'):
+                await interaction.edit_original_response(embed=success_embed, view=None)
+            else:
+                await interaction.response.edit_message(embed=success_embed, view=None)
             
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка створення тікета: {e}", ephemeral=True)
+            error_message = f"❌ Помилка створення тікета: {e}"
+            if hasattr(interaction, 'edit_original_response'):
+                await interaction.edit_original_response(content=error_message, embed=None, view=None)
+            else:
+                await interaction.response.send_message(error_message, ephemeral=True)
     
     async def ask_questions(self, channel: discord.TextChannel, questions: list, user: discord.Member):
         """Задає питання користувачу"""
@@ -208,16 +225,47 @@ class TicketTypeSelect(discord.ui.Select):
             await channel.send(embed=embed)
 
 class RoleSelect(discord.ui.Select):
-    def __init__(self):
+    def __init__(self, guild: discord.Guild):
+        self.guild = guild
         options = []
-        roles_config = TICKET_TYPES["role_application"]["roles"]
         
-        for role_key, role_config in roles_config.items():
+        # Отримуємо ролі сервера
+        available_roles = []
+        if CONFIG["AVAILABLE_ROLES"]:
+            # Якщо задані конкретні ролі
+            for role_id in CONFIG["AVAILABLE_ROLES"]:
+                role = guild.get_role(role_id)
+                if role:
+                    available_roles.append(role)
+        else:
+            # Показуємо всі ролі крім @everyone, ботів та модераторів
+            for role in guild.roles:
+                if (role != guild.default_role and 
+                    not role.is_bot_managed() and 
+                    role.id != CONFIG["MODERATOR_ROLE_ID"] and
+                    not role.permissions.administrator):
+                    available_roles.append(role)
+        
+        # Сортуємо за позицією (вищі ролі першими)
+        available_roles.sort(key=lambda r: r.position, reverse=True)
+        
+        # Беремо перші 25 ролей (обмеження Discord)
+        for role in available_roles[:25]:
             options.append(
                 discord.SelectOption(
-                    label=role_config["name"],
-                    description=f"Подати заявку на роль {role_config['name']}",
-                    value=role_key
+                    label=role.name,
+                    description=f"Подати заявку на роль {role.name}",
+                    emoji="🎭",
+                    value=str(role.id)
+                )
+            )
+        
+        if not options:
+            options.append(
+                discord.SelectOption(
+                    label="Немає доступних ролей",
+                    description="Зверніться до адміністрації",
+                    value="no_roles"
                 )
             )
         
@@ -230,22 +278,30 @@ class RoleSelect(discord.ui.Select):
         )
     
     async def callback(self, interaction: discord.Interaction):
-        role_key = self.values[0]
+        role_id_str = self.values[0]
         
-        # Перевіряємо чи вже має роль
-        role_id = TICKET_TYPES["role_application"]["roles"][role_key]["role_id"]
+        if role_id_str == "no_roles":
+            await interaction.response.send_message("❌ Немає доступних ролей для заявки!", ephemeral=True)
+            return
+        
+        role_id = int(role_id_str)
         role = interaction.guild.get_role(role_id)
         
-        if role and role in interaction.user.roles:
+        if not role:
+            await interaction.response.send_message("❌ Роль не знайдена!", ephemeral=True)
+            return
+        
+        # Перевіряємо чи вже має роль
+        if role in interaction.user.roles:
             await interaction.response.send_message(
-                "❌ У вас вже є ця роль!", 
+                f"❌ У вас вже є роль {role.mention}!", 
                 ephemeral=True
             )
             return
         
         # Створюємо тікет для заявки на роль
         ticket_select = TicketTypeSelect()
-        await ticket_select.create_ticket(interaction, "role_application", role_key)
+        await ticket_select.create_ticket(interaction, "role_application", role_id)
 
 class TicketMainView(discord.ui.View):
     def __init__(self):
@@ -253,9 +309,10 @@ class TicketMainView(discord.ui.View):
         self.add_item(TicketTypeSelect())
 
 class RoleSelectView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(RoleSelect())
+    def __init__(self, guild: discord.Guild = None):
+        super().__init__(timeout=300)  # Тимчасовий timeout для ephemeral
+        if guild:
+            self.add_item(RoleSelect(guild))
 
 class RoleApplicationButtons(discord.ui.View):
     def __init__(self, role_key: str = None, user_id: int = None):
