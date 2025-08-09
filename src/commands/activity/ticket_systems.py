@@ -5,16 +5,9 @@ from datetime import datetime, timedelta
 import asyncio
 import json
 from typing import Optional
+from modules.db import get_database
 
-# Конфігурація
-CONFIG = {
-    "MODERATOR_ROLE_ID": 123456789012345678,  # ID ролі модераторів
-    "CATEGORY_ID": None,                      # Буде знайдено автоматично або створено
-    "LOG_CHANNEL_ID": 123456789012345678,     # ID каналу логів (опціонально)
-    
-    # Ролі які можна отримати через заявку - налаштовуються адмінами
-    "AVAILABLE_ROLES": []
-}
+db = get_database()
 
 # Типи тікетів
 TICKET_TYPES = {
@@ -69,26 +62,46 @@ TICKET_TYPES = {
     }
 }
 
-# Статистика тікетів (для графіка)
-TICKET_STATS = {}
+async def get_guild_config(guild_id: int):
+    """Отримує конфігурацію гільдії з бази даних"""
+    config = await db.ticket_config.find_one({"guild_id": guild_id})
+    if not config:
+        # Створюємо конфігурацію за замовчуванням
+        default_config = {
+            "guild_id": guild_id,
+            "moderator_role_id": None,
+            "category_id": None,
+            "log_channel_id": None,
+            "available_roles": []
+        }
+        await db.ticket_config.insert_one(default_config)
+        return default_config
+    return config
 
-def save_ticket_stat(guild_id: int):
+async def update_guild_config(guild_id: int, updates: dict):
+    """Оновлює конфігурацію гільдії"""
+    await db.ticket_config.update_one(
+        {"guild_id": guild_id},
+        {"$set": updates},
+        upsert=True
+    )
+
+async def save_ticket_stat(guild_id: int):
     """Зберігає статистику створення тікета"""
     today = datetime.now().strftime('%Y-%m-%d')
-    if guild_id not in TICKET_STATS:
-        TICKET_STATS[guild_id] = {}
-    if today not in TICKET_STATS[guild_id]:
-        TICKET_STATS[guild_id][today] = 0
-    TICKET_STATS[guild_id][today] += 1
+    await db.ticket_stats.update_one(
+        {"guild_id": guild_id, "date": today},
+        {"$inc": {"count": 1}},
+        upsert=True
+    )
 
-def get_week_stats(guild_id: int):
+async def get_week_stats(guild_id: int):
     """Отримує статистику за 7 днів"""
     stats = []
     for i in range(7):
         date = (datetime.now() - timedelta(days=6-i)).strftime('%Y-%m-%d')
-        count = 0
-        if guild_id in TICKET_STATS and date in TICKET_STATS[guild_id]:
-            count = TICKET_STATS[guild_id][date]
+        stat = await db.ticket_stats.find_one({"guild_id": guild_id, "date": date})
+        count = stat["count"] if stat else 0
         stats.append((date, count))
     return stats
 
@@ -114,10 +127,11 @@ class TicketTypeSelect(discord.ui.Select):
     
     async def callback(self, interaction: discord.Interaction):
         ticket_type = self.values[0]
+        guild_config = await get_guild_config(interaction.guild.id)
         
         if ticket_type == "role_application":
             # Якщо це заявка на роль - показуємо вибір ролей
-            if not CONFIG["AVAILABLE_ROLES"]:
+            if not guild_config["available_roles"]:
                 await interaction.response.send_message(
                     "Адміністратори ще не налаштували доступні ролі для заявок.", 
                     ephemeral=True
@@ -137,6 +151,7 @@ class TicketTypeSelect(discord.ui.Select):
     
     async def create_ticket(self, interaction: discord.Interaction, ticket_type: str, role_id: int = None):
         config = TICKET_TYPES[ticket_type]
+        guild_config = await get_guild_config(interaction.guild.id)
         
         # Перевіряємо чи вже є відкритий тікет
         existing_ticket = None
@@ -162,21 +177,21 @@ class TicketTypeSelect(discord.ui.Select):
         
         # Знаходимо або створюємо категорію
         category = None
-        if CONFIG["CATEGORY_ID"]:
-            category = interaction.guild.get_channel(CONFIG["CATEGORY_ID"])
+        if guild_config["category_id"]:
+            category = interaction.guild.get_channel(guild_config["category_id"])
         
         if not category:
             # Шукаємо категорію з назвою "Tickets" або створюємо нову
             for cat in interaction.guild.categories:
                 if cat.name.lower() in ["tickets", "тікети", "тикеты"]:
                     category = cat
-                    CONFIG["CATEGORY_ID"] = cat.id
+                    await update_guild_config(interaction.guild.id, {"category_id": cat.id})
                     break
             
             if not category:
                 try:
                     category = await interaction.guild.create_category("Тікети")
-                    CONFIG["CATEGORY_ID"] = category.id
+                    await update_guild_config(interaction.guild.id, {"category_id": category.id})
                 except Exception as e:
                     await interaction.response.send_message(
                         f"Не вдалося створити категорію для тікетів: {e}", 
@@ -196,15 +211,16 @@ class TicketTypeSelect(discord.ui.Select):
         }
         
         # Додаємо права модераторам
-        mod_role = interaction.guild.get_role(CONFIG["MODERATOR_ROLE_ID"])
-        if mod_role:
-            overwrites[mod_role] = discord.PermissionOverwrite(
-                read_messages=True, 
-                send_messages=True, 
-                manage_messages=True,
-                attach_files=True,
-                embed_links=True
-            )
+        if guild_config["moderator_role_id"]:
+            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"])
+            if mod_role:
+                overwrites[mod_role] = discord.PermissionOverwrite(
+                    read_messages=True, 
+                    send_messages=True, 
+                    manage_messages=True,
+                    attach_files=True,
+                    embed_links=True
+                )
         
         try:
             channel = await category.create_text_channel(
@@ -212,6 +228,18 @@ class TicketTypeSelect(discord.ui.Select):
                 overwrites=overwrites,
                 topic=f"Тікет {config['name']} | Користувач: {interaction.user} | ID: {interaction.user.id}"
             )
+            
+            # Зберігаємо інформацію про тікет в базу
+            ticket_data = {
+                "guild_id": interaction.guild.id,
+                "channel_id": channel.id,
+                "user_id": interaction.user.id,
+                "ticket_type": ticket_type,
+                "role_id": role_id,
+                "created_at": datetime.now(),
+                "status": "open"
+            }
+            await db.tickets.insert_one(ticket_data)
             
             # Embed з інформацією
             embed = discord.Embed(
@@ -240,11 +268,12 @@ class TicketTypeSelect(discord.ui.Select):
             
             # Створюємо view з кнопками для модерації
             if ticket_type == "role_application":
-                view = RoleApplicationButtons(role_id, interaction.user.id)
+                view = RoleApplicationButtons(role_id, interaction.user.id, channel.id)
             else:
-                view = GeneralTicketButtons(ticket_type, interaction.user.id)
+                view = GeneralTicketButtons(ticket_type, interaction.user.id, channel.id)
             
             # Відправляємо повідомлення
+            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"]) if guild_config["moderator_role_id"] else None
             message = await channel.send(
                 f"{interaction.user.mention} | {mod_role.mention if mod_role else '@Модерація'}",
                 embed=embed,
@@ -261,7 +290,7 @@ class TicketTypeSelect(discord.ui.Select):
             await self.ask_questions(channel, config['questions'], interaction.user)
             
             # Зберігаємо статистику
-            save_ticket_stat(interaction.guild.id)
+            await save_ticket_stat(interaction.guild.id)
             
             # Відповідь користувачу
             success_embed = discord.Embed(
@@ -279,7 +308,7 @@ class TicketTypeSelect(discord.ui.Select):
                 await interaction.response.send_message(embed=success_embed, view=None, ephemeral=True)
             
             # Лог у канал логів
-            await self.log_ticket_creation(interaction.guild, interaction.user, config, channel)
+            await self.log_ticket_creation(interaction.guild, interaction.user, config, channel, guild_config)
             
         except Exception as e:
             error_message = f"Помилка створення тікета: {e}"
@@ -308,12 +337,12 @@ class TicketTypeSelect(discord.ui.Select):
         questions_embed.set_footer(text="Відповідайте по одному питанню в повідомленні")
         await channel.send(embed=questions_embed)
     
-    async def log_ticket_creation(self, guild: discord.Guild, user: discord.Member, config: dict, channel: discord.TextChannel):
+    async def log_ticket_creation(self, guild: discord.Guild, user: discord.Member, config: dict, channel: discord.TextChannel, guild_config: dict):
         """Логування створення тікета"""
-        if not CONFIG["LOG_CHANNEL_ID"]:
+        if not guild_config["log_channel_id"]:
             return
         
-        log_channel = guild.get_channel(CONFIG["LOG_CHANNEL_ID"])
+        log_channel = guild.get_channel(guild_config["log_channel_id"])
         if not log_channel:
             return
         
@@ -337,44 +366,50 @@ class RoleSelect(discord.ui.Select):
         self.guild = guild
         options = []
         
-        # Отримуємо ролі які налаштували адміни
-        available_roles = []
-        for role_id in CONFIG["AVAILABLE_ROLES"]:
-            role = guild.get_role(role_id)
-            if role and not role.is_bot_managed():
-                available_roles.append(role)
+        async def get_available_roles():
+            guild_config = await get_guild_config(guild.id)
+            available_roles = []
+            for role_id in guild_config["available_roles"]:
+                role = guild.get_role(role_id)
+                if role and not role.is_bot_managed():
+                    available_roles.append(role)
+            return available_roles
         
-        # Сортуємо за позицією (вищі ролі першими)
-        available_roles.sort(key=lambda r: r.position, reverse=True)
-        
-        # Беремо перші 25 ролей (обмеження Discord)
-        for role in available_roles[:25]:
-            options.append(
-                discord.SelectOption(
-                    label=role.name,
-                    description=f"Подати заявку на роль {role.name}",
-                    value=str(role.id)
-                )
-            )
-        
-        if not options:
-            options.append(
-                discord.SelectOption(
-                    label="Немає доступних ролей",
-                    description="Зверніться до адміністрації",
-                    value="no_roles"
-                )
-            )
-        
+        # Тут потрібно буде викликати асинхронну функцію в callback
         super().__init__(
             placeholder="Оберіть роль...",
-            options=options,
+            options=[discord.SelectOption(label="Завантаження...", value="loading")],
             min_values=1,
             max_values=1,
             custom_id="role_select_application"
         )
     
     async def callback(self, interaction: discord.Interaction):
+        # Отримуємо актуальні ролі
+        guild_config = await get_guild_config(interaction.guild.id)
+        
+        if interaction.data["values"][0] == "loading":
+            # Оновлюємо опції
+            available_roles = []
+            for role_id in guild_config["available_roles"]:
+                role = interaction.guild.get_role(role_id)
+                if role and not role.is_bot_managed():
+                    available_roles.append(role)
+            
+            if not available_roles:
+                await interaction.response.send_message("Немає доступних ролей для заявки!", ephemeral=True)
+                return
+            
+            # Створюємо новий view з правильними опціями
+            view = RoleSelectView(interaction.guild, available_roles)
+            embed = discord.Embed(
+                title="Заявка на роль",
+                description="Оберіть роль, на яку хочете подати заявку:",
+                color=0x2b2d31
+            )
+            await interaction.response.edit_message(embed=embed, view=view)
+            return
+        
         role_id_str = self.values[0]
         
         if role_id_str == "no_roles":
@@ -406,27 +441,94 @@ class TicketMainView(discord.ui.View):
         self.add_item(TicketTypeSelect())
 
 class RoleSelectView(discord.ui.View):
-    def __init__(self, guild: discord.Guild = None):
+    def __init__(self, guild: discord.Guild = None, available_roles: list = None):
         super().__init__(timeout=600)  # 10 хвилин
-        if guild:
-            self.add_item(RoleSelect(guild))
+        if guild and available_roles is not None:
+            options = []
+            
+            # Сортуємо за позицією (вищі ролі першими)
+            available_roles.sort(key=lambda r: r.position, reverse=True)
+            
+            # Беремо перші 25 ролей (обмеження Discord)
+            for role in available_roles[:25]:
+                options.append(
+                    discord.SelectOption(
+                        label=role.name,
+                        description=f"Подати заявку на роль {role.name}",
+                        value=str(role.id)
+                    )
+                )
+            
+            if not options:
+                options.append(
+                    discord.SelectOption(
+                        label="Немає доступних ролей",
+                        description="Зверніться до адміністрації",
+                        value="no_roles"
+                    )
+                )
+            
+            select = discord.ui.Select(
+                placeholder="Оберіть роль...",
+                options=options,
+                min_values=1,
+                max_values=1
+            )
+            
+            async def select_callback(select_interaction):
+                role_id_str = select.values[0]
+                
+                if role_id_str == "no_roles":
+                    await select_interaction.response.send_message("Немає доступних ролей для заявки!", ephemeral=True)
+                    return
+                
+                role_id = int(role_id_str)
+                role = select_interaction.guild.get_role(role_id)
+                
+                if not role:
+                    await select_interaction.response.send_message("Роль не знайдена!", ephemeral=True)
+                    return
+                
+                # Перевіряємо чи вже має роль
+                if role in select_interaction.user.roles:
+                    await select_interaction.response.send_message(
+                        f"У вас вже є роль {role.mention}!", 
+                        ephemeral=True
+                    )
+                    return
+                
+                # Створюємо тікет для заявки на роль
+                ticket_select = TicketTypeSelect()
+                await ticket_select.create_ticket(select_interaction, "role_application", role_id)
+            
+            select.callback = select_callback
+            self.add_item(select)
 
 class RoleApplicationButtons(discord.ui.View):
-    def __init__(self, role_id: int = None, user_id: int = None):
+    def __init__(self, role_id: int = None, user_id: int = None, channel_id: int = None):
         super().__init__(timeout=None)
         self.role_id = role_id
         self.user_id = user_id
+        self.channel_id = channel_id
     
     @discord.ui.button(label="Схвалити заявку", style=discord.ButtonStyle.green, custom_id="approve_role_application")
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
         # Перевіряємо права
-        if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
-        # Якщо немає збережених даних
+        # Отримуємо дані з бази якщо не передано
         if not self.role_id or not self.user_id:
-            await interaction.response.send_message("Дані тікета втрачено. Використайте /close_ticket", ephemeral=True)
+            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
+            if ticket_data:
+                self.role_id = ticket_data.get("role_id")
+                self.user_id = ticket_data.get("user_id")
+        
+        if not self.role_id or not self.user_id:
+            await interaction.response.send_message("Дані тікета не знайдено в базі даних. Використайте /close_ticket", ephemeral=True)
             return
         
         user = interaction.guild.get_member(self.user_id)
@@ -442,6 +544,12 @@ class RoleApplicationButtons(discord.ui.View):
         
         try:
             await user.add_roles(role, reason=f"Схвалено модератором {interaction.user}")
+            
+            # Оновлюємо статус тікета в базі
+            await db.tickets.update_one(
+                {"channel_id": interaction.channel.id},
+                {"$set": {"status": "approved", "approved_by": interaction.user.id, "approved_at": datetime.now()}}
+            )
             
             # Повідомлення в тікеті
             embed = discord.Embed(
@@ -482,34 +590,59 @@ class RoleApplicationButtons(discord.ui.View):
     
     @discord.ui.button(label="Відхилити заявку", style=discord.ButtonStyle.red, custom_id="reject_role_application")
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
         # Перевіряємо права
-        if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
+        # Отримуємо дані з бази якщо не передано
+        if not self.role_id or not self.user_id:
+            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
+            if ticket_data:
+                self.role_id = ticket_data.get("role_id")
+                self.user_id = ticket_data.get("user_id")
+        
         # Modal для причини відхилення
-        modal = RejectModal(self.role_id, self.user_id)
+        modal = RejectModal(self.role_id, self.user_id, interaction.channel.id)
         await interaction.response.send_modal(modal)
 
 class GeneralTicketButtons(discord.ui.View):
-    def __init__(self, ticket_type: str = None, user_id: int = None):
+    def __init__(self, ticket_type: str = None, user_id: int = None, channel_id: int = None):
         super().__init__(timeout=None)
         self.ticket_type = ticket_type
         self.user_id = user_id
+        self.channel_id = channel_id
     
     @discord.ui.button(label="Вирішено", style=discord.ButtonStyle.green, custom_id="resolve_general_ticket")
     async def resolve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
         # Перевіряємо права
-        if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
+        # Отримуємо дані з бази якщо не передано
         if not self.ticket_type or not self.user_id:
-            await interaction.response.send_message("Дані тікета втрачено.", ephemeral=True)
+            ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
+            if ticket_data:
+                self.ticket_type = ticket_data.get("ticket_type")
+                self.user_id = ticket_data.get("user_id")
+        
+        if not self.ticket_type or not self.user_id:
+            await interaction.response.send_message("Дані тікета не знайдено в базі даних.", ephemeral=True)
             return
         
         user = interaction.guild.get_member(self.user_id)
         config = TICKET_TYPES.get(self.ticket_type, {"name": "Невідомий тип"})
+        
+        # Оновлюємо статус тікета в базі
+        await db.tickets.update_one(
+            {"channel_id": interaction.channel.id},
+            {"$set": {"status": "resolved", "resolved_by": interaction.user.id, "resolved_at": datetime.now()}}
+        )
         
         embed = discord.Embed(
             title="Тікет вирішено",
@@ -543,10 +676,11 @@ class GeneralTicketButtons(discord.ui.View):
                 pass
 
 class RejectModal(discord.ui.Modal, title="Причина відхилення"):
-    def __init__(self, role_id: int, user_id: int):
+    def __init__(self, role_id: int, user_id: int, channel_id: int):
         super().__init__(timeout=300)
         self.role_id = role_id
         self.user_id = user_id
+        self.channel_id = channel_id
     
     reason = discord.ui.TextInput(
         label="Причина відхилення заявки",
@@ -559,6 +693,17 @@ class RejectModal(discord.ui.Modal, title="Причина відхилення")
     async def on_submit(self, interaction: discord.Interaction):
         user = interaction.guild.get_member(self.user_id)
         role = interaction.guild.get_role(self.role_id)
+        
+        # Оновлюємо статус тікета в базі
+        await db.tickets.update_one(
+            {"channel_id": self.channel_id},
+            {"$set": {
+                "status": "rejected", 
+                "rejected_by": interaction.user.id, 
+                "rejected_at": datetime.now(),
+                "reject_reason": self.reason.value
+            }}
+        )
         
         embed = discord.Embed(
             title="Заявку відхилено",
@@ -597,10 +742,18 @@ class TicketCloseView(discord.ui.View):
     
     @discord.ui.button(label="Закрити тікет", style=discord.ButtonStyle.secondary, custom_id="close_ticket_final")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
         # Перевіряємо права
-        if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
+        
+        # Оновлюємо статус тікета в базі
+        await db.tickets.update_one(
+            {"channel_id": interaction.channel.id},
+            {"$set": {"status": "closed", "closed_by": interaction.user.id, "closed_at": datetime.now()}}
+        )
         
         embed = discord.Embed(
             title="Тікет закривається",
@@ -615,7 +768,7 @@ class TicketCloseView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
         
         # Логування закриття
-        await self.log_ticket_closure(interaction)
+        await self.log_ticket_closure(interaction, guild_config)
         
         # Видаляємо канал через 15 секунд
         await asyncio.sleep(15)
@@ -624,12 +777,12 @@ class TicketCloseView(discord.ui.View):
         except Exception as e:
             print(f"Помилка видалення каналу: {e}")
     
-    async def log_ticket_closure(self, interaction: discord.Interaction):
+    async def log_ticket_closure(self, interaction: discord.Interaction, guild_config: dict):
         """Логування закриття тікета"""
-        if not CONFIG["LOG_CHANNEL_ID"]:
+        if not guild_config["log_channel_id"]:
             return
         
-        log_channel = interaction.guild.get_channel(CONFIG["LOG_CHANNEL_ID"])
+        log_channel = interaction.guild.get_channel(guild_config["log_channel_id"])
         if not log_channel:
             return
         
@@ -641,16 +794,17 @@ class TicketCloseView(discord.ui.View):
             )
             embed.add_field(name="Канал", value=f"#{interaction.channel.name}", inline=True)
             embed.add_field(name="Модератор", value=interaction.user.mention, inline=True)
-            embed.add_field(name="Час закриття", value=f"<t:{int(datetime.now().timestamp())}:F>", inline=True)
+            embed.add_field(name="Час закриття", value=f"<t:{int(datetime.now().timestamp())}:F>", inline=False)
             
             await log_channel.send(embed=embed)
         except:
             pass
 
 class MultiRoleSelect(discord.ui.Select):
-    def __init__(self, guild: discord.Guild, mode: str):
+    def __init__(self, guild: discord.Guild, mode: str, guild_config: dict):
         self.guild = guild
         self.mode = mode  # "add" або "remove"
+        self.guild_config = guild_config
         options = []
         
         if mode == "add":
@@ -658,10 +812,10 @@ class MultiRoleSelect(discord.ui.Select):
             for role in guild.roles:
                 if (role != guild.default_role and 
                     not role.is_bot_managed() and 
-                    role.id != CONFIG["MODERATOR_ROLE_ID"] and
+                    role.id != guild_config["moderator_role_id"] and
                     not role.permissions.administrator and
                     not role.permissions.manage_guild and
-                    role.id not in CONFIG["AVAILABLE_ROLES"]):
+                    role.id not in guild_config["available_roles"]):
                     options.append(
                         discord.SelectOption(
                             label=role.name,
@@ -670,7 +824,7 @@ class MultiRoleSelect(discord.ui.Select):
                     )
         else:
             # Показуємо ролі які В списку
-            for role_id in CONFIG["AVAILABLE_ROLES"]:
+            for role_id in guild_config["available_roles"]:
                 role = guild.get_role(role_id)
                 if role:
                     options.append(
@@ -714,13 +868,16 @@ class MultiRoleSelect(discord.ui.Select):
                 continue
             
             if self.mode == "add":
-                if role_id not in CONFIG["AVAILABLE_ROLES"]:
-                    CONFIG["AVAILABLE_ROLES"].append(role_id)
+                if role_id not in self.guild_config["available_roles"]:
+                    self.guild_config["available_roles"].append(role_id)
                     changed_roles.append(f"+ {role.mention}")
             else:  # remove
-                if role_id in CONFIG["AVAILABLE_ROLES"]:
-                    CONFIG["AVAILABLE_ROLES"].remove(role_id)
+                if role_id in self.guild_config["available_roles"]:
+                    self.guild_config["available_roles"].remove(role_id)
                     changed_roles.append(f"- {role.mention}")
+        
+        # Оновлюємо конфігурацію в базі даних
+        await update_guild_config(interaction.guild.id, {"available_roles": self.guild_config["available_roles"]})
         
         if changed_roles:
             action = "додано" if self.mode == "add" else "видалено"
@@ -731,7 +888,7 @@ class MultiRoleSelect(discord.ui.Select):
             )
             embed.add_field(
                 name="Загальна кількість ролей",
-                value=f"{len(CONFIG['AVAILABLE_ROLES'])} ролей",
+                value=f"{len(self.guild_config['available_roles'])} ролей",
                 inline=True
             )
         else:
@@ -746,7 +903,17 @@ class MultiRoleSelect(discord.ui.Select):
 class MultiRoleView(discord.ui.View):
     def __init__(self, guild: discord.Guild, mode: str):
         super().__init__(timeout=300)
-        self.add_item(MultiRoleSelect(guild, mode))
+        self.guild = guild
+        self.mode = mode
+    
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # Отримуємо конфігурацію та додаємо селект
+        guild_config = await get_guild_config(self.guild.id)
+        
+        # Видаляємо старий селект якщо є
+        self.clear_items()
+        self.add_item(MultiRoleSelect(self.guild, self.mode, guild_config))
+        return True
 
 class TicketSystem(commands.Cog):
     def __init__(self, bot):
@@ -789,6 +956,8 @@ class TicketSystem(commands.Cog):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
             return
+        
+        guild_config = await get_guild_config(interaction.guild.id)
         
         if action == "create_panel":
             target_channel = channel or interaction.channel
@@ -839,20 +1008,22 @@ class TicketSystem(commands.Cog):
         
         elif action == "configure":
             changes_made = []
+            updates = {}
             
             if moderator_role:
-                CONFIG["MODERATOR_ROLE_ID"] = moderator_role.id
+                updates["moderator_role_id"] = moderator_role.id
                 changes_made.append(f"Роль модераторів: {moderator_role.mention}")
             
             if log_channel:
-                CONFIG["LOG_CHANNEL_ID"] = log_channel.id
+                updates["log_channel_id"] = log_channel.id
                 changes_made.append(f"Канал логів: {log_channel.mention}")
             
             if category:
-                CONFIG["CATEGORY_ID"] = category.id
+                updates["category_id"] = category.id
                 changes_made.append(f"Категорія тікетів: {category.name}")
             
-            if changes_made:
+            if updates:
+                await update_guild_config(interaction.guild.id, updates)
                 embed = discord.Embed(
                     title="Конфігурацію оновлено",
                     description="**Змінено наступні налаштування:**\n\n" + "\n".join(changes_made),
@@ -869,9 +1040,9 @@ class TicketSystem(commands.Cog):
         
         elif action == "show_config":
             # Показуємо поточну конфігурацію
-            mod_role = interaction.guild.get_role(CONFIG["MODERATOR_ROLE_ID"])
-            log_ch = interaction.guild.get_channel(CONFIG["LOG_CHANNEL_ID"])
-            cat = interaction.guild.get_channel(CONFIG["CATEGORY_ID"])
+            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"]) if guild_config["moderator_role_id"] else None
+            log_ch = interaction.guild.get_channel(guild_config["log_channel_id"]) if guild_config["log_channel_id"] else None
+            cat = interaction.guild.get_channel(guild_config["category_id"]) if guild_config["category_id"] else None
             
             embed = discord.Embed(
                 title="Поточна конфігурація",
@@ -898,7 +1069,7 @@ class TicketSystem(commands.Cog):
             
             embed.add_field(
                 name="Доступні ролі для заявок",
-                value=f"{len(CONFIG['AVAILABLE_ROLES'])} ролей" if CONFIG['AVAILABLE_ROLES'] else "Не налаштовано",
+                value=f"{len(guild_config['available_roles'])} ролей" if guild_config['available_roles'] else "Не налаштовано",
                 inline=False
             )
             
@@ -919,8 +1090,10 @@ class TicketSystem(commands.Cog):
             await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
             return
         
+        guild_config = await get_guild_config(interaction.guild.id)
+        
         if action == "list":
-            if not CONFIG["AVAILABLE_ROLES"]:
+            if not guild_config["available_roles"]:
                 embed = discord.Embed(
                     title="Список ролей",
                     description="Немає налаштованих ролей для заявок",
@@ -935,17 +1108,21 @@ class TicketSystem(commands.Cog):
             )
             
             roles_list = []
-            for i, role_id in enumerate(CONFIG["AVAILABLE_ROLES"], 1):
+            valid_roles = []
+            for i, role_id in enumerate(guild_config["available_roles"], 1):
                 role = interaction.guild.get_role(role_id)
                 if role:
                     roles_list.append(f"{i}. {role.mention}")
+                    valid_roles.append(role_id)
                 else:
                     roles_list.append(f"{i}. Роль видалена (ID: {role_id})")
-                    # Видаляємо неіснуючі ролі
-                    CONFIG["AVAILABLE_ROLES"].remove(role_id)
+            
+            # Очищуємо неіснуючі ролі
+            if len(valid_roles) != len(guild_config["available_roles"]):
+                await update_guild_config(interaction.guild.id, {"available_roles": valid_roles})
             
             embed.add_field(
-                name=f"Ролей: {len(CONFIG['AVAILABLE_ROLES'])}",
+                name=f"Ролей: {len(valid_roles)}",
                 value="\n".join(roles_list) if roles_list else "Немає ролей",
                 inline=False
             )
@@ -971,13 +1148,16 @@ class TicketSystem(commands.Cog):
     async def close_ticket_command(self, interaction: discord.Interaction):
         """Команда для закриття тікета"""
         
+        guild_config = await get_guild_config(interaction.guild.id)
+        
         # Перевіряємо права
-        if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
+        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
         # Перевіряємо чи це тікет канал
-        if not any(ticket_type in interaction.channel.name for ticket_type in TICKET_TYPES.keys()):
+        ticket_data = await db.tickets.find_one({"channel_id": interaction.channel.id})
+        if not ticket_data:
             await interaction.response.send_message("Ця команда працює тільки в каналах тікетів!", ephemeral=True)
             return
         
@@ -998,25 +1178,23 @@ class TicketSystem(commands.Cog):
     async def ticket_stats(self, interaction: discord.Interaction):
         """Показує статистику системи тікетів з графіком за 7 днів"""
         
-        # Підраховуємо активні тікети
-        active_tickets = 0
+        guild_config = await get_guild_config(interaction.guild.id)
+        
+        # Підраховуємо активні тікети з бази даних
+        active_tickets_cursor = db.tickets.find({
+            "guild_id": interaction.guild.id, 
+            "status": "open"
+        })
+        active_tickets = await active_tickets_cursor.to_list(1000)
+        
+        # Підраховуємо по типам
         tickets_by_type = {}
-        
-        category = None
-        if CONFIG["CATEGORY_ID"]:
-            category = interaction.guild.get_channel(CONFIG["CATEGORY_ID"])
-        
-        if category:
-            for channel in category.text_channels:
-                active_tickets += 1
-                # Визначаємо тип тікета з назви каналу
-                for ticket_type in TICKET_TYPES.keys():
-                    if ticket_type in channel.name:
-                        tickets_by_type[ticket_type] = tickets_by_type.get(ticket_type, 0) + 1
-                        break
+        for ticket in active_tickets:
+            ticket_type = ticket.get("ticket_type", "unknown")
+            tickets_by_type[ticket_type] = tickets_by_type.get(ticket_type, 0) + 1
         
         # Отримуємо статистику за 7 днів
-        week_stats = get_week_stats(interaction.guild.id)
+        week_stats = await get_week_stats(interaction.guild.id)
         
         embed = discord.Embed(
             title="Статистика системи тікетів",
@@ -1027,19 +1205,21 @@ class TicketSystem(commands.Cog):
         
         embed.add_field(
             name="Активні тікети",
-            value=f"**{active_tickets}** тікетів відкрито",
+            value=f"**{len(active_tickets)}** тікетів відкрито",
             inline=True
         )
         
+        category = interaction.guild.get_channel(guild_config["category_id"]) if guild_config["category_id"] else None
         embed.add_field(
             name="Категорія",
             value=category.mention if category else "Не знайдена",
             inline=True
         )
         
+        mod_role = interaction.guild.get_role(guild_config["moderator_role_id"]) if guild_config["moderator_role_id"] else None
         embed.add_field(
             name="Модератори",
-            value=f"<@&{CONFIG['MODERATOR_ROLE_ID']}>",
+            value=mod_role.mention if mod_role else "Не налаштовано",
             inline=True
         )
         
@@ -1065,8 +1245,8 @@ class TicketSystem(commands.Cog):
         if tickets_by_type:
             breakdown = ""
             for ticket_type, count in tickets_by_type.items():
-                config = TICKET_TYPES.get(ticket_type, {})
-                name = config.get('name', ticket_type)
+                type_config = TICKET_TYPES.get(ticket_type, {})
+                name = type_config.get('name', ticket_type)
                 breakdown += f"{name}: **{count}**\n"
             
             embed.add_field(
@@ -1085,6 +1265,14 @@ class ConfirmCloseView(discord.ui.View):
     
     @discord.ui.button(label="Так, закрити", style=discord.ButtonStyle.danger, custom_id="confirm_close_ticket")
     async def confirm_close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_config = await get_guild_config(interaction.guild.id)
+        
+        # Оновлюємо статус тікета в базі
+        await db.tickets.update_one(
+            {"channel_id": interaction.channel.id},
+            {"$set": {"status": "closed", "closed_by": interaction.user.id, "closed_at": datetime.now()}}
+        )
+        
         embed = discord.Embed(
             title="Тікет закривається",
             description=f"Тікет закрито модератором {interaction.user.mention}\n\n" +
@@ -1098,7 +1286,7 @@ class ConfirmCloseView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
         
         # Логування закриття
-        await self.log_ticket_closure(interaction)
+        await self.log_ticket_closure(interaction, guild_config)
         
         # Видаляємо канал через 10 секунд
         await asyncio.sleep(10)
@@ -1116,12 +1304,12 @@ class ConfirmCloseView(discord.ui.View):
         )
         await interaction.response.edit_message(embed=embed, view=None)
     
-    async def log_ticket_closure(self, interaction: discord.Interaction):
+    async def log_ticket_closure(self, interaction: discord.Interaction, guild_config: dict):
         """Логування закриття тікета"""
-        if not CONFIG["LOG_CHANNEL_ID"]:
+        if not guild_config["log_channel_id"]:
             return
         
-        log_channel = interaction.guild.get_channel(CONFIG["LOG_CHANNEL_ID"])
+        log_channel = interaction.guild.get_channel(guild_config["log_channel_id"])
         if not log_channel:
             return
         
@@ -1146,4 +1334,4 @@ class ConfirmCloseView(discord.ui.View):
 
 async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
-    print("Ticket System завантажено")
+    print("Ticket System з базою даних завантажено")
