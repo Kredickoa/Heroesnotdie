@@ -1137,15 +1137,6 @@ async def setup(bot):
         name="Категорія тікетів",
         value=cat.name if cat else "Буде створена автоматично",
         inline=False
-    )
-            
-            embed.add_field(
-                name="Доступні ролі для заявок",
-                value=f"{len(guild_config['available_roles'])} ролей" if guild_config['available_roles'] else "Не налаштовано",
-                inline=False
-            )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="manage_roles", description="Керування ролями для заявок")
     @app_commands.describe(action="Дія з ролями")
