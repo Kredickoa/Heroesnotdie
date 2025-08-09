@@ -905,16 +905,33 @@ class MultiRoleView(discord.ui.View):
         super().__init__(timeout=300)
         self.guild = guild
         self.mode = mode
+        # Не додаємо селект тут - додамо в interaction_check
     
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         # Отримуємо конфігурацію та додаємо селект
         guild_config = await get_guild_config(self.guild.id)
         
-        # Видаляємо старий селект якщо є
+        # Видаляємо старий селект якщо є та додаємо новий
         self.clear_items()
         self.add_item(MultiRoleSelect(self.guild, self.mode, guild_config))
+        
+        # Оновлюємо повідомлення з новим селектом
+        title = "Додавання ролей" if self.mode == "add" else "Видалення ролей"
+        description = "Оберіть ролі для додавання до списку заявок:" if self.mode == "add" else "Оберіть ролі для видалення зі списку заявок:"
+        
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=0x2b2d31
+        )
+        
+        try:
+            await interaction.response.edit_message(embed=embed, view=self)
+        except:
+            # Якщо не вдалося редагувати, значить це перший раз
+            pass
+        
         return True
-
 class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -1132,6 +1149,13 @@ class TicketSystem(commands.Cog):
         else:
             # Показуємо селект для вибору ролей
             view = MultiRoleView(interaction.guild, action)
+# Додаємо заглушку селекта для початкового відображення
+placeholder_select = discord.ui.Select(
+    placeholder="Натисніть тут щоб завантажити ролі...",
+    options=[discord.SelectOption(label="Завантаження...", value="loading")],
+    disabled=False
+)
+view.add_item(placeholder_select)
             
             title = "Додавання ролей" if action == "add" else "Видалення ролей"
             description = "Оберіть ролі для додавання до списку заявок:" if action == "add" else "Оберіть ролі для видалення зі списку заявок:"
