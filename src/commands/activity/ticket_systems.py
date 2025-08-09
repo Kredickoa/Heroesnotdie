@@ -1190,8 +1190,6 @@ async def setup(bot):
             
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="close_ticket", description="Закрити поточний тікет (тільки модератори)")
-    async def close_ticket_command(self, interaction: discord.Interaction):
         """Команда для закриття тікета"""
         
         guild_config = await get_guild_config(interaction.guild.id)
@@ -1220,8 +1218,6 @@ async def setup(bot):
         view = ConfirmCloseView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="ticket_stats", description="Статистика тікетів")
-    async def ticket_stats(self, interaction: discord.Interaction):
         """Показує статистику системи тікетів з графіком за 7 днів"""
         
         guild_config = await get_guild_config(interaction.guild.id)
