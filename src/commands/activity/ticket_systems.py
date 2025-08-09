@@ -1120,31 +1120,7 @@ class GeneralTicketButtons(discord.ui.View):
 async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
     print("Ticket System з базою даних завантажено")
-        
-    embed.add_field(
-        name="Роль модераторів",
-        value=mod_role.mention if mod_role else "Не налаштовано",
-        inline=False
-    )
 
-    embed.add_field(
-        name="Канал логів",
-        value=log_ch.mention if log_ch else "Не налаштовано",
-        inline=False
-    )
-
-    embed.add_field(
-        name="Категорія тікетів",
-        value=cat.name if cat else "Буде створена автоматично",
-        inline=False
-    
-    @app_commands.command(name="manage_roles", description="Керування ролями для заявок")
-    @app_commands.describe(action="Дія з ролями")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="Додати ролі", value="add"),
-        app_commands.Choice(name="Видалити ролі", value="remove"),
-        app_commands.Choice(name="Показати список", value="list")
-    ])
     async def manage_roles(self, interaction: discord.Interaction, action: str):
         """Керування ролями для заявок"""
         
