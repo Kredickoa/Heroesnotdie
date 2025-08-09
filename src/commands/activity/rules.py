@@ -14,12 +14,11 @@ class RulesView(discord.ui.View):
 
     @discord.ui.button(label='📜 Правила серверу', style=discord.ButtonStyle.primary)
     async def server_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="Правила серверу",
-            description="[📋 Перейти до правил серверу](https://docs.google.com/document/d/1DB0v409ZOYQo1XtnTS3zLmRovGO9yDj4WNnTZPBOfKs/edit?tab=t.0)",
-            color=0x00ff00
+        # Просто відкриваємо посилання
+        await interaction.response.send_message(
+            "📋 **Правила серверу:** https://docs.google.com/document/d/1DB0v409ZOYQo1XtnTS3zLmRovGO9yDj4WNnTZPBOfKs/edit?tab=t.0", 
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label='🎮 Правила HOI4', style=discord.ButtonStyle.secondary)
     async def hoi4_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -33,8 +32,8 @@ class RulesView(discord.ui.View):
             color=0x2b2d31
         )
         
-        # Спробуємо прикріпити фото
-        image_path = r"C:\Users\kredi\Desktop\bot1\assets\images\sso.jpg"
+        # Прикріплення фото з правильним шляхом
+        image_path = "assets/images/sso.jpg"
         try:
             if os.path.exists(image_path):
                 file = discord.File(image_path, filename="hoi4_rules.jpg")
@@ -99,12 +98,10 @@ class GuidesButtons(discord.ui.View):
 
     @discord.ui.button(label='Флот', style=discord.ButtonStyle.primary)
     async def fleet_guide(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="Гайд по флоту",
-            description="[🚢 Перейти до гайду по флоту](https://docs.google.com/document/d/1Q6bYRRyOPAebEZj0eBy0r-h9B7ftHTIY/edit)",
-            color=0x00ff00
+        await interaction.response.send_message(
+            "🚢 **Гайд по флоту:** https://docs.google.com/document/d/1Q6bYRRyOPAebEZj0eBy0r-h9B7ftHTIY/edit", 
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # --- КНОПКИ ДЛЯ HOI4 ---
@@ -114,39 +111,31 @@ class HOI4RulesButtons(discord.ui.View):
 
     @discord.ui.button(label='Основні правила гри', style=discord.ButtonStyle.primary)
     async def basic_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="Основні правила гри",
-            description="[📜 Перейти до основних правил](https://docs.google.com/document/d/19_N0yTlB2WOOsMNCMA4kvndmxsLijfG-0iHHAzD9rqo/edit?tab=t.0#heading=h.45pvneze54ml)",
-            color=0x00ff00
+        await interaction.response.send_message(
+            "📜 **Основні правила гри:** https://docs.google.com/document/d/19_N0yTlB2WOOsMNCMA4kvndmxsLijfG-0iHHAzD9rqo/edit?tab=t.0#heading=h.45pvneze54ml", 
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label='Неісторичні ігри', style=discord.ButtonStyle.secondary)
     async def non_historical(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="Неісторичні ігри",
-            description="[🎯 Перейти до правил неісторичних ігор](https://docs.google.com/document/d/1sDY5YZMJb1uSrUkySeFqQy7sWoCzucBgyx9IkT5qeCY/edit)",
-            color=0x00ff00
+        await interaction.response.send_message(
+            "🎯 **Неісторичні ігри:** https://docs.google.com/document/d/1sDY5YZMJb1uSrUkySeFqQy7sWoCzucBgyx9IkT5qeCY/edit", 
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label='Історичні ігри', style=discord.ButtonStyle.secondary)
     async def historical(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="Історичні ігри",
-            description="[📚 Перейти до правил історичних ігор](https://docs.google.com/document/d/1PMhIOESkCo-bxzmaiLFjB1jaDcMZIomW25hQLyEdXRk/edit)",
-            color=0x00ff00
+        await interaction.response.send_message(
+            "📚 **Історичні ігри:** https://docs.google.com/document/d/1PMhIOESkCo-bxzmaiLFjB1jaDcMZIomW25hQLyEdXRk/edit", 
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label='Кайзеррайх', style=discord.ButtonStyle.secondary)
     async def kaiserreich(self, interaction: discord.Interaction, button: discord.ui.Button):
-        embed = discord.Embed(
-            title="Кайзеррайх",
-            description="[⚔️ Перейти до правил Кайзеррайх](https://docs.google.com/document/d/1Ko70bTb_9c9OVnn8ZpXJhvJIktvvKHIg_BRlzFKcwcw/edit)",
-            color=0x00ff00
+        await interaction.response.send_message(
+            "⚔️ **Кайзеррайх:** https://docs.google.com/document/d/1Ko70bTb_9c9OVnn8ZpXJhvJIktvvKHIg_BRlzFKcwcw/edit", 
+            ephemeral=True
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class RulesSetupCommands(commands.Cog):
