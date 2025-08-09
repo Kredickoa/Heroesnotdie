@@ -129,14 +129,36 @@ class TicketTypeSelect(discord.ui.Select):
         ticket_type = self.values[0]
         guild_config = await get_guild_config(interaction.guild.id)
         
-        if ticket_type == "role_application":
-            # Якщо це заявка на роль - показуємо вибір ролей
-            if not guild_config["available_roles"]:
-                await interaction.response.send_message(
-                    "Адміністратори ще не налаштували доступні ролі для заявок.", 
-                    ephemeral=True
-                )
-                return
+    if ticket_type == "role_application":
+    # Якщо це заявка на роль - показуємо вибір ролей
+    if not guild_config["available_roles"]:
+        await interaction.response.send_message(
+            "Адміністратори ще не налаштували доступні ролі для заявок.", 
+            ephemeral=True
+        )
+        return
+    
+    # Отримуємо доступні ролі
+    available_roles = []
+    for role_id in guild_config["available_roles"]:
+        role = interaction.guild.get_role(role_id)
+        if role and not role.is_bot_managed():
+            available_roles.append(role)
+    
+    if not available_roles:
+        await interaction.response.send_message(
+            "Всі налаштовані ролі недоступні або видалені.", 
+            ephemeral=True
+        )
+        return
+    
+    view = RoleSelectView(interaction.guild, available_roles)
+    embed = discord.Embed(
+        title="Заявка на роль",
+        description="Оберіть роль, на яку хочете подати заявку:",
+        color=0x2b2d31
+    )
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
             
             view = RoleSelectView(interaction.guild)
             embed = discord.Embed(
