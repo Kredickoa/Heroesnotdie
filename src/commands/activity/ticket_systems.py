@@ -1122,33 +1122,37 @@ async def setup(bot):
     print("Ticket System з базою даних завантажено")
         
         elif action == "show_config":
-            # Показуємо поточну конфігурацію
-            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"]) if guild_config["moderator_role_id"] else None
-            log_ch = interaction.guild.get_channel(guild_config["log_channel_id"]) if guild_config["log_channel_id"] else None
-            cat = interaction.guild.get_channel(guild_config["category_id"]) if guild_config["category_id"] else None
-            
-            embed = discord.Embed(
-                title="Поточна конфігурація",
-                color=0x2b2d31
-            )
-            
-            embed.add_field(
-                name="Роль модераторів",
-                value=mod_role.mention if mod_role else "Не налаштовано",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="Канал логів",
-                value=log_ch.mention if log_ch else "Не налаштовано",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="Категорія тікетів",
-                value=cat.name if cat else "Буде створена автоматично",
-                inline=False
-            )
+    # Показуємо поточну конфігурацію
+    mod_role_id = guild_config.get("moderator_role_id")
+    log_channel_id = guild_config.get("log_channel_id") 
+    category_id = guild_config.get("category_id")
+    
+    mod_role = interaction.guild.get_role(mod_role_id) if mod_role_id else None
+    log_ch = interaction.guild.get_channel(log_channel_id) if log_channel_id else None
+    cat = interaction.guild.get_channel(category_id) if category_id else None
+
+    embed = discord.Embed(
+        title="Поточна конфігурація",
+        color=0x2b2d31
+    )
+
+    embed.add_field(
+        name="Роль модераторів",
+        value=mod_role.mention if mod_role else "Не налаштовано",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Канал логів",
+        value=log_ch.mention if log_ch else "Не налаштовано",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Категорія тікетів",
+        value=cat.name if cat else "Буде створена автоматично",
+        inline=False
+    )
             
             embed.add_field(
                 name="Доступні ролі для заявок",
