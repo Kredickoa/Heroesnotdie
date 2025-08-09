@@ -14,7 +14,6 @@ class RulesView(discord.ui.View):
 
     @discord.ui.button(label='📜 Правила серверу', style=discord.ButtonStyle.primary)
     async def server_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Просто відкриваємо посилання
         await interaction.response.send_message(
             "📋 **Правила серверу:** https://docs.google.com/document/d/1DB0v409ZOYQo1XtnTS3zLmRovGO9yDj4WNnTZPBOfKs/edit?tab=t.0", 
             ephemeral=True
@@ -32,12 +31,12 @@ class RulesView(discord.ui.View):
             color=0x2b2d31
         )
         
-        # Прикріплення фото з правильним шляхом
+        # Прикріплення фото
         image_path = "assets/images/sso.jpg"
         try:
             if os.path.exists(image_path):
-                file = discord.File(image_path, filename="hoi4_rules.jpg")
-                embed.set_image(url="attachment://hoi4_rules.jpg")
+                file = discord.File(image_path, filename="sso.jpg")
+                embed.set_image(url="attachment://sso.jpg")
                 await interaction.response.send_message(embed=embed, file=file, view=HOI4RulesButtons(), ephemeral=True)
             else:
                 await interaction.response.send_message(embed=embed, view=HOI4RulesButtons(), ephemeral=True)
@@ -56,7 +55,7 @@ class RulesView(discord.ui.View):
                 "Шаблони дивізій, літаків і флоту – в розробці.\n"
                 "Армійські механіки – в розробці.\n"
                 "Авіація – в розробці.\n"
-                "Флот – Посилання"
+                "Флот – доступний за кнопкою нижче"
             ),
             color=0x2b2d31
         )
@@ -132,10 +131,17 @@ class HOI4RulesButtons(discord.ui.View):
 
     @discord.ui.button(label='Кайзеррайх', style=discord.ButtonStyle.secondary)
     async def kaiserreich(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "⚔️ **Кайзеррайх:** https://docs.google.com/document/d/1Ko70bTb_9c9OVnn8ZpXJhvJIktvvKHIg_BRlzFKcwcw/edit", 
-            ephemeral=True
+        embed = discord.Embed(
+            title="🎖️ Кайзеррайх",
+            description="**Правила для гри в модифікацію Kaiserreich**",
+            color=0x8B4513
         )
+        embed.add_field(
+            name="📋 Документ з правилами",
+            value="[Переглянути правила Кайзеррайх](https://docs.google.com/document/d/1Ko70bTb_9c9OVnn8ZpXJhvJIktvvKHIg_BRlzFKcwcw/edit)",
+            inline=False
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class RulesSetupCommands(commands.Cog):
@@ -148,6 +154,12 @@ class RulesSetupCommands(commands.Cog):
         if not ctx.author.guild_permissions.administrator:
             await ctx.send("❌ У вас немає прав для цієї команди!", delete_after=5)
             return
+
+        # Видаляємо повідомлення з командою
+        try:
+            await ctx.message.delete()
+        except:
+            pass
 
         embed = discord.Embed(color=0x2f3136)
         embed.add_field(
@@ -172,7 +184,6 @@ class RulesSetupCommands(commands.Cog):
         )
 
         await ctx.send(embed=embed, view=RulesView())
-        await ctx.message.delete()  # Видаляємо повідомлення з командою
 
 
 async def setup(bot):
