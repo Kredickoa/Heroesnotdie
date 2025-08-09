@@ -1134,7 +1134,7 @@ class TicketSystem(commands.Cog):
                 else:
                     roles_list.append(f"{i}. Роль видалена (ID: {role_id})")
             
-            # Очищуємо неіснуючі ролі
+# Очищуємо неіснуючі ролі
             if len(valid_roles) != len(guild_config["available_roles"]):
                 await update_guild_config(interaction.guild.id, {"available_roles": valid_roles})
             
@@ -1151,11 +1151,11 @@ class TicketSystem(commands.Cog):
             view = MultiRoleView(interaction.guild, action)
             # Додаємо заглушку селекта для початкового відображення
             placeholder_select = discord.ui.Select(
-    placeholder="Натисніть тут щоб завантажити ролі...",
-    options=[discord.SelectOption(label="Завантаження...", value="loading")],
-    disabled=False
-)
-view.add_item(placeholder_select)
+                placeholder="Натисніть тут щоб завантажити ролі...",
+                options=[discord.SelectOption(label="Завантаження...", value="loading")],
+                disabled=False
+            )
+            view.add_item(placeholder_select)
             
             title = "Додавання ролей" if action == "add" else "Видалення ролей"
             description = "Оберіть ролі для додавання до списку заявок:" if action == "add" else "Оберіть ролі для видалення зі списку заявок:"
