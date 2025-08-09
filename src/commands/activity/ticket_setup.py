@@ -103,7 +103,8 @@ class TicketTypeSelect(discord.ui.Select):
             placeholder="Оберіть тип тікета...",
             options=options,
             min_values=1,
-            max_values=1
+            max_values=1,
+            custom_id="ticket_type_select"
         )
     
     async def callback(self, interaction: discord.Interaction):
@@ -208,7 +209,7 @@ class TicketTypeSelect(discord.ui.Select):
 
 class RoleSelectView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)
         self.add_item(RoleSelect())
 
 class RoleSelect(discord.ui.Select):
@@ -229,7 +230,8 @@ class RoleSelect(discord.ui.Select):
             placeholder="Оберіть роль...",
             options=options,
             min_values=1,
-            max_values=1
+            max_values=1,
+            custom_id="role_select"
         )
     
     async def callback(self, interaction: discord.Interaction):
@@ -251,13 +253,27 @@ class RoleSelect(discord.ui.Select):
         await ticket_select.create_ticket(interaction, "role_application", role_key)
 
 class RoleApplicationButtons(discord.ui.View):
-    def __init__(self, role_key: str, user_id: int):
+    def __init__(self, role_key: str = None, user_id: int = None):
         super().__init__(timeout=None)
         self.role_key = role_key
         self.user_id = user_id
+        
+        # Зберігаємо дані в custom_id для відновлення після рестарту
+        if role_key and user_id:
+            self.approve.custom_id = f"approve_role_{role_key}_{user_id}"
+            self.reject.custom_id = f"reject_role_{role_key}_{user_id}"
     
     @discord.ui.button(label="✅ Схвалити", style=discord.ButtonStyle.green)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Отримуємо дані з custom_id якщо потрібно
+        if not self.role_key or not self.user_id:
+            try:
+                parts = button.custom_id.split("_")
+                self.role_key = parts[2]
+                self.user_id = int(parts[3])
+            except:
+                await interaction.response.send_message("❌ Помилка отримання даних!", ephemeral=True)
+                return
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
             await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
@@ -305,6 +321,15 @@ class RoleApplicationButtons(discord.ui.View):
     
     @discord.ui.button(label="❌ Відхилити", style=discord.ButtonStyle.red)
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Отримуємо дані з custom_id якщо потрібно  
+        if not self.role_key or not self.user_id:
+            try:
+                parts = button.custom_id.split("_")
+                self.role_key = parts[2]
+                self.user_id = int(parts[3])
+            except:
+                await interaction.response.send_message("❌ Помилка отримання даних!", ephemeral=True)
+                return
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
             await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
@@ -337,13 +362,26 @@ class RoleApplicationButtons(discord.ui.View):
                 pass
 
 class GeneralTicketButtons(discord.ui.View):
-    def __init__(self, ticket_type: str, user_id: int):
+    def __init__(self, ticket_type: str = None, user_id: int = None):
         super().__init__(timeout=None)
         self.ticket_type = ticket_type
         self.user_id = user_id
+        
+        # Зберігаємо дані в custom_id
+        if ticket_type and user_id:
+            self.resolve.custom_id = f"resolve_{ticket_type}_{user_id}"
     
     @discord.ui.button(label="✅ Вирішено", style=discord.ButtonStyle.green)
     async def resolve(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Отримуємо дані з custom_id якщо потрібно
+        if not self.ticket_type or not self.user_id:
+            try:
+                parts = button.custom_id.split("_")
+                self.ticket_type = parts[1]
+                self.user_id = int(parts[2])
+            except:
+                await interaction.response.send_message("❌ Помилка отримання даних!", ephemeral=True)
+                return
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
             await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
@@ -378,7 +416,7 @@ class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="🔒 Закрити тікет", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🔒 Закрити тікет", style=discord.ButtonStyle.secondary, custom_id="close_ticket_final")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
@@ -408,6 +446,16 @@ class TicketMainView(discord.ui.View):
 class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+    
+    async def cog_load(self):
+        """Викликається при завантаженні cog"""
+        # Відновлюємо persistent views
+        self.bot.add_view(TicketMainView())
+        self.bot.add_view(RoleSelectView())
+        self.bot.add_view(TicketCloseView())
+        # Додаємо базові view для кнопок (без параметрів для відновлення)
+        self.bot.add_view(RoleApplicationButtons())
+        self.bot.add_view(GeneralTicketButtons())
     
     @app_commands.command(name="ticket", description="Створити тікет")
     async def create_ticket(self, interaction: discord.Interaction):
@@ -478,8 +526,4 @@ class TicketSystem(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
-    
-    # Додаємо persistent views
-    bot.add_view(TicketMainView())
-    bot.add_view(RoleSelectView())
     print("🎫 Ticket System loaded!")
