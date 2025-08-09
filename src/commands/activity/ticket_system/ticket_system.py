@@ -12,18 +12,14 @@ CONFIG = {
     "CATEGORY_ID": None,                      # Буде знайдено автоматично або створено
     "LOG_CHANNEL_ID": 123456789012345678,     # ID каналу логів (опціонально)
     
-    # Ролі які можна отримати через заявку (залиште пустим щоб показати всі ролі сервера)
-    "AVAILABLE_ROLES": [
-        # 123456789012345678,  # ID ролі 1
-        # 123456789012345678,  # ID ролі 2
-    ]
+    # Ролі які можна отримати через заявку - налаштовуються адмінами
+    "AVAILABLE_ROLES": []
 }
 
 # Типи тікетів
 TICKET_TYPES = {
     "role_application": {
-        "name": "🎭 Заявка на роль",
-        "emoji": "🎭",
+        "name": "Заявка на роль",
         "description": "Подати заявку на отримання ролі",
         "questions": [
             "Чому ви хочете отримати цю роль?",
@@ -33,8 +29,7 @@ TICKET_TYPES = {
         ]
     },
     "server_suggestion": {
-        "name": "💡 Пропозиція для сервера",
-        "emoji": "💡", 
+        "name": "Пропозиція для сервера",
         "description": "Поділитися ідеями для покращення сервера",
         "questions": [
             "Яка ваша пропозиція?",
@@ -44,8 +39,7 @@ TICKET_TYPES = {
         ]
     },
     "bug_report": {
-        "name": "🐛 Звіт про баг",
-        "emoji": "🐛",
+        "name": "Звіт про баг",
         "description": "Повідомити про технічні проблеми",
         "questions": [
             "Опишіть проблему детально:",
@@ -55,8 +49,7 @@ TICKET_TYPES = {
         ]
     },
     "general_support": {
-        "name": "❓ Загальна підтримка",
-        "emoji": "❓",
+        "name": "Загальна підтримка",
         "description": "Питання або допомога від модерації",
         "questions": [
             "Опишіть ваше питання або проблему:",
@@ -65,8 +58,7 @@ TICKET_TYPES = {
         ]
     },
     "complaint": {
-        "name": "⚠️ Скарга",
-        "emoji": "⚠️",
+        "name": "Скарга",
         "description": "Подати скаргу на користувача або ситуацію",
         "questions": [
             "На кого або що ви скаржитесь?",
@@ -85,13 +77,12 @@ class TicketTypeSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=config["name"],
                     description=config["description"], 
-                    emoji=config["emoji"],
                     value=ticket_type
                 )
             )
         
         super().__init__(
-            placeholder="🎫 Оберіть тип тікета...",
+            placeholder="Оберіть тип тікета...",
             options=options,
             min_values=1,
             max_values=1,
@@ -103,13 +94,20 @@ class TicketTypeSelect(discord.ui.Select):
         
         if ticket_type == "role_application":
             # Якщо це заявка на роль - показуємо вибір ролей
+            if not CONFIG["AVAILABLE_ROLES"]:
+                await interaction.response.send_message(
+                    "Адміністратори ще не налаштували доступні ролі для заявок.", 
+                    ephemeral=True
+                )
+                return
+            
             view = RoleSelectView(interaction.guild)
             embed = discord.Embed(
-                title="🎭 Заявка на роль",
+                title="Заявка на роль",
                 description="Оберіть роль, на яку хочете подати заявку:",
-                color=discord.Color.blue()
+                color=0x2b2d31
             )
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         else:
             # Для інших типів - відразу створюємо тікет
             await self.create_ticket(interaction, ticket_type)
@@ -127,7 +125,7 @@ class TicketTypeSelect(discord.ui.Select):
         
         if existing_ticket:
             await interaction.response.send_message(
-                f"❌ У вас вже є відкритий тікет: {existing_ticket.mention}",
+                f"У вас вже є відкритий тікет: {existing_ticket.mention}",
                 ephemeral=True
             )
             return
@@ -154,11 +152,11 @@ class TicketTypeSelect(discord.ui.Select):
             
             if not category:
                 try:
-                    category = await interaction.guild.create_category("🎫 Тікети")
+                    category = await interaction.guild.create_category("Тікети")
                     CONFIG["CATEGORY_ID"] = category.id
                 except Exception as e:
                     await interaction.response.send_message(
-                        f"❌ Не вдалося створити категорію для тікетів: {e}", 
+                        f"Не вдалося створити категорію для тікетів: {e}", 
                         ephemeral=True
                     )
                     return
@@ -194,22 +192,22 @@ class TicketTypeSelect(discord.ui.Select):
             
             # Embed з інформацією
             embed = discord.Embed(
-                title=f"{config['emoji']} {config['name']}",
+                title=f"{config['name']}",
                 description=f"**Користувач:** {interaction.user.mention}\n**Створено:** <t:{int(datetime.now().timestamp())}:F>",
-                color=discord.Color.green(),
+                color=0x2b2d31,
                 timestamp=datetime.now()
             )
             
             if role_id:
                 role = interaction.guild.get_role(role_id)
                 embed.add_field(
-                    name="🎯 Запитувана роль",
+                    name="Запитувана роль",
                     value=f"{role.mention if role else 'Невідома роль'}",
                     inline=True
                 )
             
             embed.add_field(
-                name="📋 Інструкції",
+                name="Інструкції",
                 value="• Відповідайте на запитання чесно та детально\n• Очікуйте відповіді від модерації\n• Не спамте в каналі",
                 inline=False
             )
@@ -225,8 +223,7 @@ class TicketTypeSelect(discord.ui.Select):
             
             # Відправляємо повідомлення
             message = await channel.send(
-                f"👋 {interaction.user.mention} | 🛡️ {mod_role.mention if mod_role else '@Модерація'}\n" +
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"{interaction.user.mention} | {mod_role.mention if mod_role else '@Модерація'}",
                 embed=embed,
                 view=view
             )
@@ -242,25 +239,24 @@ class TicketTypeSelect(discord.ui.Select):
             
             # Відповідь користувачу
             success_embed = discord.Embed(
-                title="✅ Тікет успішно створено!",
+                title="Тікет успішно створено",
                 description=f"**Ваш тікет:** {channel.mention}\n\n" +
-                           f"🔹 Тип: {config['name']}\n" +
-                           f"🔹 Очікуйте відповіді від модерації\n" +
-                           f"🔹 Не закривайте цю вкладку до завершення",
-                color=discord.Color.green()
+                           f"Тип: {config['name']}\n" +
+                           f"Очікуйте відповіді від модерації\n" +
+                           f"Не закривайте цю вкладку до завершення",
+                color=0x57f287
             )
-            success_embed.set_footer(text="Дякуємо за звернення!")
             
             if interaction.response.is_done():
                 await interaction.edit_original_response(embed=success_embed, view=None)
             else:
-                await interaction.response.edit_message(embed=success_embed, view=None)
+                await interaction.response.send_message(embed=success_embed, view=None, ephemeral=True)
             
             # Лог у канал логів
             await self.log_ticket_creation(interaction.guild, interaction.user, config, channel)
             
         except Exception as e:
-            error_message = f"❌ Помилка створення тікета: {e}"
+            error_message = f"Помилка створення тікета: {e}"
             if interaction.response.is_done():
                 await interaction.edit_original_response(content=error_message, embed=None, view=None)
             else:
@@ -271,14 +267,14 @@ class TicketTypeSelect(discord.ui.Select):
         await asyncio.sleep(3)  # Невелика затримка
         
         questions_embed = discord.Embed(
-            title="📝 Анкета",
+            title="Анкета",
             description="Будь ласка, дайте відповіді на наступні питання:",
-            color=discord.Color.blue()
+            color=0x2b2d31
         )
         
         for i, question in enumerate(questions, 1):
             questions_embed.add_field(
-                name=f"❓ Питання {i}",
+                name=f"Питання {i}",
                 value=question,
                 inline=False
             )
@@ -297,13 +293,13 @@ class TicketTypeSelect(discord.ui.Select):
         
         try:
             embed = discord.Embed(
-                title="🎫 Новий тікет створено",
-                color=discord.Color.blue(),
+                title="Новий тікет створено",
+                color=0x2b2d31,
                 timestamp=datetime.now()
             )
-            embed.add_field(name="👤 Користувач", value=f"{user.mention} (`{user.id}`)", inline=True)
-            embed.add_field(name="📋 Тип", value=config['name'], inline=True)
-            embed.add_field(name="📍 Канал", value=channel.mention, inline=True)
+            embed.add_field(name="Користувач", value=f"{user.mention} (`{user.id}`)", inline=True)
+            embed.add_field(name="Тип", value=config['name'], inline=True)
+            embed.add_field(name="Канал", value=channel.mention, inline=True)
             embed.set_thumbnail(url=user.display_avatar.url)
             
             await log_channel.send(embed=embed)
@@ -315,23 +311,12 @@ class RoleSelect(discord.ui.Select):
         self.guild = guild
         options = []
         
-        # Отримуємо ролі сервера
+        # Отримуємо ролі які налаштували адміни
         available_roles = []
-        if CONFIG["AVAILABLE_ROLES"]:
-            # Якщо задані конкретні ролі
-            for role_id in CONFIG["AVAILABLE_ROLES"]:
-                role = guild.get_role(role_id)
-                if role and not role.is_bot_managed():
-                    available_roles.append(role)
-        else:
-            # Показуємо всі ролі крім @everyone, ботів та модераторів
-            for role in guild.roles:
-                if (role != guild.default_role and 
-                    not role.is_bot_managed() and 
-                    role.id != CONFIG["MODERATOR_ROLE_ID"] and
-                    not role.permissions.administrator and
-                    not role.permissions.manage_guild):
-                    available_roles.append(role)
+        for role_id in CONFIG["AVAILABLE_ROLES"]:
+            role = guild.get_role(role_id)
+            if role and not role.is_bot_managed():
+                available_roles.append(role)
         
         # Сортуємо за позицією (вищі ролі першими)
         available_roles.sort(key=lambda r: r.position, reverse=True)
@@ -342,7 +327,6 @@ class RoleSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=role.name,
                     description=f"Подати заявку на роль {role.name}",
-                    emoji="🎭",
                     value=str(role.id)
                 )
             )
@@ -357,7 +341,7 @@ class RoleSelect(discord.ui.Select):
             )
         
         super().__init__(
-            placeholder="🎭 Оберіть роль...",
+            placeholder="Оберіть роль...",
             options=options,
             min_values=1,
             max_values=1,
@@ -368,20 +352,20 @@ class RoleSelect(discord.ui.Select):
         role_id_str = self.values[0]
         
         if role_id_str == "no_roles":
-            await interaction.response.send_message("❌ Немає доступних ролей для заявки!", ephemeral=True)
+            await interaction.response.send_message("Немає доступних ролей для заявки!", ephemeral=True)
             return
         
         role_id = int(role_id_str)
         role = interaction.guild.get_role(role_id)
         
         if not role:
-            await interaction.response.send_message("❌ Роль не знайдена!", ephemeral=True)
+            await interaction.response.send_message("Роль не знайдена!", ephemeral=True)
             return
         
         # Перевіряємо чи вже має роль
         if role in interaction.user.roles:
             await interaction.response.send_message(
-                f"❌ У вас вже є роль {role.mention}!", 
+                f"У вас вже є роль {role.mention}!", 
                 ephemeral=True
             )
             return
@@ -407,27 +391,27 @@ class RoleApplicationButtons(discord.ui.View):
         self.role_id = role_id
         self.user_id = user_id
     
-    @discord.ui.button(label="✅ Схвалити заявку", style=discord.ButtonStyle.green, custom_id="approve_role_application")
+    @discord.ui.button(label="Схвалити заявку", style=discord.ButtonStyle.green, custom_id="approve_role_application")
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
-            await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
         # Якщо немає збережених даних
         if not self.role_id or not self.user_id:
-            await interaction.response.send_message("❌ Дані тікета втрачено. Використайте /close_ticket", ephemeral=True)
+            await interaction.response.send_message("Дані тікета втрачено. Використайте /close_ticket", ephemeral=True)
             return
         
         user = interaction.guild.get_member(self.user_id)
         if not user:
-            await interaction.response.send_message("❌ Користувач не знайдений на сервері!", ephemeral=True)
+            await interaction.response.send_message("Користувач не знайдений на сервері!", ephemeral=True)
             return
         
         # Знаходимо роль
         role = interaction.guild.get_role(self.role_id)
         if not role:
-            await interaction.response.send_message("❌ Роль не знайдена!", ephemeral=True)
+            await interaction.response.send_message("Роль не знайдена!", ephemeral=True)
             return
         
         try:
@@ -435,14 +419,14 @@ class RoleApplicationButtons(discord.ui.View):
             
             # Повідомлення в тікеті
             embed = discord.Embed(
-                title="✅ Заявку схвалено!",
+                title="Заявку схвалено",
                 description=f"**Користувач:** {user.mention}\n**Роль:** {role.mention}\n**Модератор:** {interaction.user.mention}",
-                color=discord.Color.green(),
+                color=0x57f287,
                 timestamp=datetime.now()
             )
             embed.add_field(
-                name="🎉 Вітаємо!",
-                value=f"Роль **{role.name}** успішно додано до профілю користувача!",
+                name="Вітаємо",
+                value=f"Роль **{role.name}** успішно додано до профілю користувача",
                 inline=False
             )
             
@@ -451,31 +435,31 @@ class RoleApplicationButtons(discord.ui.View):
             # DM користувачу
             try:
                 dm_embed = discord.Embed(
-                    title="🎉 Заявку схвалено!",
-                    description=f"Вашу заявку на роль **{role.name}** схвалено!\n\n" +
-                               f"🔹 Сервер: **{interaction.guild.name}**\n" +
-                               f"🔹 Роль додано до вашого профілю\n" +
-                               f"🔹 Модератор: {interaction.user.mention}",
-                    color=discord.Color.green()
+                    title="Заявку схвалено",
+                    description=f"Вашу заявку на роль **{role.name}** схвалено\n\n" +
+                               f"Сервер: **{interaction.guild.name}**\n" +
+                               f"Роль додано до вашого профілю\n" +
+                               f"Модератор: {interaction.user.mention}",
+                    color=0x57f287
                 )
                 dm_embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
                 await user.send(embed=dm_embed)
             except:
                 # Якщо не може відправити DM - повідомляємо в каналі
                 await interaction.followup.send(
-                    f"⚠️ {user.mention}, не вдалося відправити повідомлення в ПП. " +
+                    f"{user.mention}, не вдалося відправити повідомлення в ПП. " +
                     f"Ваша заявка схвалена і роль {role.mention} додано!",
                     ephemeral=False
                 )
             
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка додавання ролі: {e}", ephemeral=True)
+            await interaction.response.send_message(f"Помилка додавання ролі: {e}", ephemeral=True)
     
-    @discord.ui.button(label="❌ Відхилити заявку", style=discord.ButtonStyle.red, custom_id="reject_role_application")
+    @discord.ui.button(label="Відхилити заявку", style=discord.ButtonStyle.red, custom_id="reject_role_application")
     async def reject(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
-            await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
         # Modal для причини відхилення
@@ -488,30 +472,30 @@ class GeneralTicketButtons(discord.ui.View):
         self.ticket_type = ticket_type
         self.user_id = user_id
     
-    @discord.ui.button(label="✅ Вирішено", style=discord.ButtonStyle.green, custom_id="resolve_general_ticket")
+    @discord.ui.button(label="Вирішено", style=discord.ButtonStyle.green, custom_id="resolve_general_ticket")
     async def resolve(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
-            await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
         if not self.ticket_type or not self.user_id:
-            await interaction.response.send_message("❌ Дані тікета втрачено.", ephemeral=True)
+            await interaction.response.send_message("Дані тікета втрачено.", ephemeral=True)
             return
         
         user = interaction.guild.get_member(self.user_id)
         config = TICKET_TYPES.get(self.ticket_type, {"name": "Невідомий тип"})
         
         embed = discord.Embed(
-            title="✅ Тікет вирішено",
+            title="Тікет вирішено",
             description=f"**Користувач:** {user.mention if user else 'Користувач покинув сервер'}\n" +
                        f"**Тип тікета:** {config['name']}\n" +
                        f"**Модератор:** {interaction.user.mention}",
-            color=discord.Color.green(),
+            color=0x57f287,
             timestamp=datetime.now()
         )
         embed.add_field(
-            name="📋 Статус",
+            name="Статус",
             value="Тікет успішно вирішено та готовий до закриття",
             inline=False
         )
@@ -522,12 +506,12 @@ class GeneralTicketButtons(discord.ui.View):
         if user:
             try:
                 dm_embed = discord.Embed(
-                    title="✅ Тікет вирішено",
+                    title="Тікет вирішено",
                     description=f"Ваш тікет типу **{config['name']}** було вирішено.\n\n" +
-                               f"🔹 Сервер: **{interaction.guild.name}**\n" +
-                               f"🔹 Модератор: {interaction.user.mention}\n" +
-                               f"🔹 Дякуємо за звернення!",
-                    color=discord.Color.green()
+                               f"Сервер: **{interaction.guild.name}**\n" +
+                               f"Модератор: {interaction.user.mention}\n" +
+                               f"Дякуємо за звернення!",
+                    color=0x57f287
                 )
                 await user.send(embed=dm_embed)
             except:
@@ -552,15 +536,15 @@ class RejectModal(discord.ui.Modal, title="Причина відхилення")
         role = interaction.guild.get_role(self.role_id)
         
         embed = discord.Embed(
-            title="❌ Заявку відхилено",
+            title="Заявку відхилено",
             description=f"**Користувач:** {user.mention if user else 'Користувач покинув сервер'}\n" +
                        f"**Роль:** {role.mention if role else 'Роль видалена'}\n" +
                        f"**Модератор:** {interaction.user.mention}",
-            color=discord.Color.red(),
+            color=0xed4245,
             timestamp=datetime.now()
         )
         embed.add_field(
-            name="📝 Причина відхилення",
+            name="Причина відхилення",
             value=self.reason.value,
             inline=False
         )
@@ -571,12 +555,12 @@ class RejectModal(discord.ui.Modal, title="Причина відхилення")
         if user:
             try:
                 dm_embed = discord.Embed(
-                    title="❌ Заявку відхилено",
+                    title="Заявку відхилено",
                     description=f"На жаль, вашу заявку на роль **{role.name if role else 'невідома роль'}** відхилено.\n\n" +
-                               f"🔹 Сервер: **{interaction.guild.name}**\n" +
-                               f"🔹 Причина: {self.reason.value}\n" +
-                               f"🔹 Ви можете подати нову заявку пізніше",
-                    color=discord.Color.red()
+                               f"Сервер: **{interaction.guild.name}**\n" +
+                               f"Причина: {self.reason.value}\n" +
+                               f"Ви можете подати нову заявку пізніше",
+                    color=0xed4245
                 )
                 await user.send(embed=dm_embed)
             except:
@@ -586,22 +570,22 @@ class TicketCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
     
-    @discord.ui.button(label="🔒 Закрити тікет", style=discord.ButtonStyle.secondary, custom_id="close_ticket_final")
+    @discord.ui.button(label="Закрити тікет", style=discord.ButtonStyle.secondary, custom_id="close_ticket_final")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
-            await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
         embed = discord.Embed(
-            title="🔒 Тікет закривається",
+            title="Тікет закривається",
             description=f"Тікет закрито модератором {interaction.user.mention}\n\n" +
-                       f"📅 Час закриття: <t:{int(datetime.now().timestamp())}:F>\n" +
-                       f"⏰ Канал буде видалено через 15 секунд...",
-            color=discord.Color.orange(),
+                       f"Час закриття: <t:{int(datetime.now().timestamp())}:F>\n" +
+                       f"Канал буде видалено через 15 секунд...",
+            color=0xfee75c,
             timestamp=datetime.now()
         )
-        embed.set_footer(text="Дякуємо за використання системи тікетів!")
+        embed.set_footer(text="Дякуємо за використання системи тікетів")
         
         await interaction.response.edit_message(embed=embed, view=None)
         
@@ -626,13 +610,13 @@ class TicketCloseView(discord.ui.View):
         
         try:
             embed = discord.Embed(
-                title="🔒 Тікет закрито",
-                color=discord.Color.orange(),
+                title="Тікет закрито",
+                color=0xfee75c,
                 timestamp=datetime.now()
             )
-            embed.add_field(name="📍 Канал", value=f"#{interaction.channel.name}", inline=True)
-            embed.add_field(name="🛡️ Модератор", value=interaction.user.mention, inline=True)
-            embed.add_field(name="⏰ Час закриття", value=f"<t:{int(datetime.now().timestamp())}:F>", inline=True)
+            embed.add_field(name="Канал", value=f"#{interaction.channel.name}", inline=True)
+            embed.add_field(name="Модератор", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Час закриття", value=f"<t:{int(datetime.now().timestamp())}:F>", inline=True)
             
             await log_channel.send(embed=embed)
         except:
@@ -649,179 +633,94 @@ class TicketSystem(commands.Cog):
         self.bot.add_view(RoleApplicationButtons())
         self.bot.add_view(GeneralTicketButtons())
         self.bot.add_view(TicketCloseView())
-        print("🎫 Persistent views завантажено!")
+        print("Persistent views завантажено")
     
-    @app_commands.command(name="ticket", description="🎫 Створити тікет")
-    async def create_ticket(self, interaction: discord.Interaction):
-        """Головна команда для створення тікетів"""
-        
-        embed = discord.Embed(
-            title="🎫 Система тікетів",
-            description="**Ласкаво просимо до системи підтримки!**\n\n" +
-                       "Оберіть тип тікета, який найкраще описує вашу ситуацію:",
-            color=discord.Color.blue(),
-            timestamp=datetime.now()
-        )
-        
-        # Додаємо поля з описом кожного типу
-        for ticket_type, config in TICKET_TYPES.items():
-            embed.add_field(
-                name=f"{config['emoji']} {config['name']}",
-                value=f"• {config['description']}",
-                inline=False
-            )
-        
-        embed.add_field(
-            name="📋 Важливо:",
-            value="• Один користувач може мати лише один активний тікет кожного типу\n" +
-                  "• Будьте чесними та детальними у відповідях\n" +
-                  "• Модерація відповість найближчим часом",
-            inline=False
-        )
-        
-        embed.set_footer(text="Виберіть опцію з меню нижче ⬇️")
-        embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
-        
-        view = TicketMainView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-    
-    @app_commands.command(name="ticket_panel", description="🛠️ Створити панель тікетів (тільки адміни)")
+    @app_commands.command(name="ticket_panel", description="Створити панель тікетів (тільки адміни)")
     @app_commands.describe(channel="Канал для розміщення панелі тікетів")
     async def setup_tickets(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
         """Команда для налаштування постійної панелі тікетів"""
         
         # Перевіряємо права
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
             return
         
         target_channel = channel or interaction.channel
         
         # Головний embed
         main_embed = discord.Embed(
-            title="🎫 Система тікетів підтримки",
-            description=f"**Ласкаво просимо на сервер {interaction.guild.name}!**\n\n" +
-                       "Якщо у вас є питання, проблеми або пропозиції - створіть тікет!\n" +
-                       "Наша команда модераторів завжди готова допомогти. ✨",
-            color=discord.Color.blue(),
+            title="ЛІДЕРБОРД",
+            color=0x2b2d31,
             timestamp=datetime.now()
         )
         
         # Додаємо інформацію про типи тікетів
         ticket_info = ""
-        for ticket_type, config in TICKET_TYPES.items():
-            ticket_info += f"{config['emoji']} **{config['name']}**\n├ {config['description']}\n\n"
+        for i, (ticket_type, config) in enumerate(TICKET_TYPES.items(), 1):
+            ticket_info += f"{i}. {config['name']} | {config['description']}\n"
         
         main_embed.add_field(
-            name="📋 Доступні типи тікетів:",
+            name="Доступні типи тікетів:",
             value=ticket_info.strip(),
             inline=False
         )
         
         main_embed.add_field(
-            name="📌 Правила використання:",
-            value="🔹 Один активний тікет кожного типу на користувача\n" +
-                  "🔹 Відповідайте чесно та детально\n" +
-                  "🔹 Будьте ввічливими з модерацією\n" +
-                  "🔹 Не створюйте тікети без потреби",
+            name="Правила використання:",
+            value="• Один активний тікет кожного типу на користувача\n" +
+                  "• Відповідайте чесно та детально\n" +
+                  "• Будьте ввічливими з модерацією\n" +
+                  "• Не створюйте тікети без потреби",
             inline=False
         )
         
-        main_embed.add_field(
-            name="⏰ Час роботи підтримки:",
-            value="Модерація працює цілодобово, але час відповіді може варіюватися від декількох хвилин до декількох годин залежно від складності питання.",
-            inline=False
-        )
-        
-        main_embed.set_footer(text="🔹 Натисніть на меню нижче щоб створити тікет")
+        main_embed.set_footer(text="Виберіть опцію з меню нижче")
         main_embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
-        
-        # Додатковий embed з інструкціями
-        instruction_embed = discord.Embed(
-            title="📖 Як створити тікет?",
-            color=discord.Color.green()
-        )
-        
-        instruction_embed.add_field(
-            name="Крок 1️⃣",
-            value="Натисніть на меню вибору нижче",
-            inline=True
-        )
-        
-        instruction_embed.add_field(
-            name="Крок 2️⃣", 
-            value="Оберіть тип вашого питання",
-            inline=True
-        )
-        
-        instruction_embed.add_field(
-            name="Крок 3️⃣",
-            value="Дочекайтеся створення приватного каналу",
-            inline=True
-        )
-        
-        instruction_embed.add_field(
-            name="Крок 4️⃣",
-            value="Відповідайте на питання бота",
-            inline=True
-        )
-        
-        instruction_embed.add_field(
-            name="Крок 5️⃣",
-            value="Дочекайтеся відповіді модератора",
-            inline=True
-        )
-        
-        instruction_embed.add_field(
-            name="Крок 6️⃣",
-            value="Дякуємо за звернення! 🎉",
-            inline=True
-        )
         
         view = TicketMainView()
         
         # Відправляємо повідомлення
-        await target_channel.send(embeds=[main_embed, instruction_embed], view=view)
+        await target_channel.send(embed=main_embed, view=view)
         
         success_embed = discord.Embed(
-            title="✅ Панель тікетів створено!",
+            title="Панель тікетів створено",
             description=f"Панель успішно розміщено в {target_channel.mention}\n\n" +
-                       f"🔹 Користувачі тепер можуть створювати тікети\n" +
-                       f"🔹 Переконайтесь що ID модераторської ролі вказано правильно\n" +
-                       f"🔹 За потреби налаштуйте права доступу до категорії",
-            color=discord.Color.green()
+                       f"Користувачі тепер можуть створювати тікети\n" +
+                       f"Переконайтесь що ID модераторської ролі вказано правильно\n" +
+                       f"За потреби налаштуйте права доступу до категорії",
+            color=0x57f287
         )
         
         await interaction.response.send_message(embed=success_embed, ephemeral=True)
     
-    @app_commands.command(name="close_ticket", description="🔒 Закрити поточний тікет (тільки модератори)")
+    @app_commands.command(name="close_ticket", description="Закрити поточний тікет (тільки модератори)")
     async def close_ticket_command(self, interaction: discord.Interaction):
         """Команда для закриття тікета"""
         
         # Перевіряємо права
         if not any(role.id == CONFIG["MODERATOR_ROLE_ID"] for role in interaction.user.roles):
-            await interaction.response.send_message("❌ Недостатньо прав!", ephemeral=True)
+            await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
         # Перевіряємо чи це тікет канал
         if not any(ticket_type in interaction.channel.name for ticket_type in TICKET_TYPES.keys()):
-            await interaction.response.send_message("❌ Ця команда працює тільки в каналах тікетів!", ephemeral=True)
+            await interaction.response.send_message("Ця команда працює тільки в каналах тікетів!", ephemeral=True)
             return
         
         # Створюємо embed для підтвердження
         embed = discord.Embed(
-            title="⚠️ Підтвердження закриття",
+            title="Підтвердження закриття",
             description=f"Ви впевнені що хочете закрити цей тікет?\n\n" +
-                       f"🔹 Канал: {interaction.channel.mention}\n" +
-                       f"🔹 Модератор: {interaction.user.mention}\n" +
-                       f"🔹 Канал буде видалено **безповоротно**",
-            color=discord.Color.orange()
+                       f"Канал: {interaction.channel.mention}\n" +
+                       f"Модератор: {interaction.user.mention}\n" +
+                       f"Канал буде видалено **безповоротно**",
+            color=0xfee75c
         )
         
         view = ConfirmCloseView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    @app_commands.command(name="ticket_config", description="⚙️ Налаштування системи тікетів")
+    @app_commands.command(name="ticket_config", description="Налаштування системи тікетів")
     @app_commands.describe(
         moderator_role="Роль модераторів",
         log_channel="Канал для логів тікетів",
@@ -838,28 +737,28 @@ class TicketSystem(commands.Cog):
         
         # Перевіряємо права
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
             return
         
         changes_made = []
         
         if moderator_role:
             CONFIG["MODERATOR_ROLE_ID"] = moderator_role.id
-            changes_made.append(f"🛡️ Роль модераторів: {moderator_role.mention}")
+            changes_made.append(f"Роль модераторів: {moderator_role.mention}")
         
         if log_channel:
             CONFIG["LOG_CHANNEL_ID"] = log_channel.id
-            changes_made.append(f"📝 Канал логів: {log_channel.mention}")
+            changes_made.append(f"Канал логів: {log_channel.mention}")
         
         if category:
             CONFIG["CATEGORY_ID"] = category.id
-            changes_made.append(f"📁 Категорія тікетів: {category.name}")
+            changes_made.append(f"Категорія тікетів: {category.name}")
         
         if changes_made:
             embed = discord.Embed(
-                title="✅ Конфігурацію оновлено!",
+                title="Конфігурацію оновлено",
                 description="**Змінено наступні налаштування:**\n\n" + "\n".join(changes_made),
-                color=discord.Color.green()
+                color=0x57f287
             )
         else:
             # Показуємо поточну конфігурацію
@@ -868,37 +767,133 @@ class TicketSystem(commands.Cog):
             cat = interaction.guild.get_channel(CONFIG["CATEGORY_ID"])
             
             embed = discord.Embed(
-                title="⚙️ Поточна конфігурація",
-                color=discord.Color.blue()
+                title="Поточна конфігурація",
+                color=0x2b2d31
             )
             
             embed.add_field(
-                name="🛡️ Роль модераторів",
-                value=mod_role.mention if mod_role else "❌ Не налаштовано",
+                name="Роль модераторів",
+                value=mod_role.mention if mod_role else "Не налаштовано",
                 inline=False
             )
             
             embed.add_field(
-                name="📝 Канал логів",
-                value=log_ch.mention if log_ch else "❌ Не налаштовано",
+                name="Канал логів",
+                value=log_ch.mention if log_ch else "Не налаштовано",
                 inline=False
             )
             
             embed.add_field(
-                name="📁 Категорія тікетів",
-                value=cat.name if cat else "❌ Буде створена автоматично",
+                name="Категорія тікетів",
+                value=cat.name if cat else "Буде створена автоматично",
                 inline=False
             )
             
             embed.add_field(
-                name="📋 Доступні ролі для заявок",
-                value=f"{len(CONFIG['AVAILABLE_ROLES'])} ролей" if CONFIG['AVAILABLE_ROLES'] else "Всі ролі сервера",
+                name="Доступні ролі для заявок",
+                value=f"{len(CONFIG['AVAILABLE_ROLES'])} ролей" if CONFIG['AVAILABLE_ROLES'] else "Не налаштовано",
                 inline=False
             )
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @app_commands.command(name="ticket_stats", description="📊 Статистика тікетів")
+    @app_commands.command(name="add_role", description="Додати роль до списку доступних для заявок")
+    @app_commands.describe(role="Роль для додавання")
+    async def add_role(self, interaction: discord.Interaction, role: discord.Role):
+        """Додати роль до списку доступних для заявок"""
+        
+        # Перевіряємо права
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+            return
+        
+        if role.id in CONFIG["AVAILABLE_ROLES"]:
+            await interaction.response.send_message(f"Роль {role.mention} вже є в списку доступних!", ephemeral=True)
+            return
+        
+        if role.is_bot_managed() or role.permissions.administrator:
+            await interaction.response.send_message("Не можна додати роль бота або адміністратора!", ephemeral=True)
+            return
+        
+        CONFIG["AVAILABLE_ROLES"].append(role.id)
+        
+        embed = discord.Embed(
+            title="Роль додано",
+            description=f"Роль {role.mention} додано до списку доступних для заявок",
+            color=0x57f287
+        )
+        embed.add_field(
+            name="Загальна кількість ролей",
+            value=f"{len(CONFIG['AVAILABLE_ROLES'])} ролей",
+            inline=True
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="remove_role", description="Видалити роль зі списку доступних для заявок")
+    @app_commands.describe(role="Роль для видалення")
+    async def remove_role(self, interaction: discord.Interaction, role: discord.Role):
+        """Видалити роль зі списку доступних для заявок"""
+        
+        # Перевіряємо права
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+            return
+        
+        if role.id not in CONFIG["AVAILABLE_ROLES"]:
+            await interaction.response.send_message(f"Роль {role.mention} немає в списку доступних!", ephemeral=True)
+            return
+        
+        CONFIG["AVAILABLE_ROLES"].remove(role.id)
+        
+        embed = discord.Embed(
+            title="Роль видалено",
+            description=f"Роль {role.mention} видалено зі списку доступних для заявок",
+            color=0xed4245
+        )
+        embed.add_field(
+            name="Загальна кількість ролей",
+            value=f"{len(CONFIG['AVAILABLE_ROLES'])} ролей",
+            inline=True
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="list_roles", description="Показати список доступних ролей для заявок")
+    async def list_roles(self, interaction: discord.Interaction):
+        """Показати список доступних ролей для заявок"""
+        
+        if not CONFIG["AVAILABLE_ROLES"]:
+            embed = discord.Embed(
+                title="Список ролей",
+                description="Немає налаштованих ролей для заявок",
+                color=0xed4245
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="Доступні ролі для заявок",
+            color=0x2b2d31
+        )
+        
+        roles_list = []
+        for i, role_id in enumerate(CONFIG["AVAILABLE_ROLES"], 1):
+            role = interaction.guild.get_role(role_id)
+            if role:
+                roles_list.append(f"{i}. {role.mention}")
+            else:
+                roles_list.append(f"{i}. Роль видалена (ID: {role_id})")
+        
+        embed.add_field(
+            name=f"Ролей: {len(CONFIG['AVAILABLE_ROLES'])}",
+            value="\n".join(roles_list) if roles_list else "Немає ролей",
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="ticket_stats", description="Статистика тікетів")
     async def ticket_stats(self, interaction: discord.Interaction):
         """Показує статистику системи тікетів"""
         
@@ -920,26 +915,26 @@ class TicketSystem(commands.Cog):
                         break
         
         embed = discord.Embed(
-            title="📊 Статистика системи тікетів",
+            title="Статистика системи тікетів",
             description=f"**Загальна інформація на {datetime.now().strftime('%d.%m.%Y %H:%M')}**",
-            color=discord.Color.blue(),
+            color=0x2b2d31,
             timestamp=datetime.now()
         )
         
         embed.add_field(
-            name="🎫 Активні тікети",
+            name="Активні тікети",
             value=f"**{active_tickets}** тікетів відкрито",
             inline=True
         )
         
         embed.add_field(
-            name="📁 Категорія",
-            value=category.mention if category else "❌ Не знайдена",
+            name="Категорія",
+            value=category.mention if category else "Не знайдена",
             inline=True
         )
         
         embed.add_field(
-            name="🛡️ Модератори",
+            name="Модератори",
             value=f"<@&{CONFIG['MODERATOR_ROLE_ID']}>",
             inline=True
         )
@@ -949,12 +944,11 @@ class TicketSystem(commands.Cog):
             breakdown = ""
             for ticket_type, count in tickets_by_type.items():
                 config = TICKET_TYPES.get(ticket_type, {})
-                emoji = config.get('emoji', '❓')
                 name = config.get('name', ticket_type)
-                breakdown += f"{emoji} {name}: **{count}**\n"
+                breakdown += f"{name}: **{count}**\n"
             
             embed.add_field(
-                name="📋 Розбивка по типам",
+                name="Розбивка по типам",
                 value=breakdown.strip(),
                 inline=False
             )
@@ -968,17 +962,17 @@ class ConfirmCloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=60)
     
-    @discord.ui.button(label="✅ Так, закрити", style=discord.ButtonStyle.danger, custom_id="confirm_close_ticket")
+    @discord.ui.button(label="Так, закрити", style=discord.ButtonStyle.danger, custom_id="confirm_close_ticket")
     async def confirm_close(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(
-            title="🔒 Тікет закривається",
+            title="Тікет закривається",
             description=f"Тікет закрито модератором {interaction.user.mention}\n\n" +
-                       f"📅 Час закриття: <t:{int(datetime.now().timestamp())}:F>\n" +
-                       f"⏰ Канал буде видалено через 10 секунд...",
-            color=discord.Color.orange(),
+                       f"Час закриття: <t:{int(datetime.now().timestamp())}:F>\n" +
+                       f"Канал буде видалено через 10 секунд...",
+            color=0xfee75c,
             timestamp=datetime.now()
         )
-        embed.set_footer(text="Дякуємо за використання системи тікетів!")
+        embed.set_footer(text="Дякуємо за використання системи тікетів")
         
         await interaction.response.edit_message(embed=embed, view=None)
         
@@ -992,12 +986,12 @@ class ConfirmCloseView(discord.ui.View):
         except:
             pass
     
-    @discord.ui.button(label="❌ Скасувати", style=discord.ButtonStyle.secondary, custom_id="cancel_close_ticket")
+    @discord.ui.button(label="Скасувати", style=discord.ButtonStyle.secondary, custom_id="cancel_close_ticket")
     async def cancel_close(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(
-            title="✅ Скасовано",
+            title="Скасовано",
             description="Закриття тікета скасовано.",
-            color=discord.Color.green()
+            color=0x57f287
         )
         await interaction.response.edit_message(embed=embed, view=None)
     
@@ -1012,13 +1006,13 @@ class ConfirmCloseView(discord.ui.View):
         
         try:
             embed = discord.Embed(
-                title="🔒 Тікет закрито",
-                color=discord.Color.orange(),
+                title="Тікет закрито",
+                color=0xfee75c,
                 timestamp=datetime.now()
             )
-            embed.add_field(name="📍 Канал", value=f"#{interaction.channel.name}", inline=True)
-            embed.add_field(name="🛡️ Модератор", value=interaction.user.mention, inline=True)
-            embed.add_field(name="⏰ Час закриття", value=f"<t:{int(datetime.now().timestamp())}:F>", inline=False)
+            embed.add_field(name="Канал", value=f"#{interaction.channel.name}", inline=True)
+            embed.add_field(name="Модератор", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Час закриття", value=f"<t:{int(datetime.now().timestamp())}:F>", inline=False)
             
             await log_channel.send(embed=embed)
         except:
@@ -1031,4 +1025,4 @@ class ConfirmCloseView(discord.ui.View):
 
 async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
-    print("🎫 Ticket System завантажено!")
+    print("Ticket System завантажено")
