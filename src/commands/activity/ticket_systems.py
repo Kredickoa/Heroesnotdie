@@ -1149,8 +1149,8 @@ class TicketSystem(commands.Cog):
         else:
             # Показуємо селект для вибору ролей
             view = MultiRoleView(interaction.guild, action)
-# Додаємо заглушку селекта для початкового відображення
-placeholder_select = discord.ui.Select(
+            # Додаємо заглушку селекта для початкового відображення
+            placeholder_select = discord.ui.Select(
     placeholder="Натисніть тут щоб завантажити ролі...",
     options=[discord.SelectOption(label="Завантаження...", value="loading")],
     disabled=False
