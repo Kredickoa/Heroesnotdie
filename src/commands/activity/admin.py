@@ -43,45 +43,51 @@ class AdminCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="addxp", description="Додати XP")
-    @app_commands.describe(user="Кому додати", amount="Скільки XP")
-    async def add_xp(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+    @app_commands.command(name="xp", description="Управління XP користувачів")
+    @app_commands.describe(
+        дія="Що зробити з XP",
+        користувач="Користувач для дії",
+        кількість="Кількість XP або рівень"
+    )
+    @app_commands.choices(дія=[
+        app_commands.Choice(name="Додати XP", value="add"),
+        app_commands.Choice(name="Забрати XP", value="remove"),
+        app_commands.Choice(name="Встановити рівень", value="setlevel"),
+        app_commands.Choice(name="Скинути XP", value="reset")
+    ])
+    async def xp_manage(self, interaction: discord.Interaction, дія: app_commands.Choice[str], 
+                       користувач: discord.Member, кількість: int = 0):
         if not check_permissions(interaction):
-            await interaction.response.send_message("Недостатньо прав.", ephemeral=True)
+            await interaction.response.send_message("❌ Недостатньо прав.", ephemeral=True)
             return
-        user_data = await get_user_data(interaction.guild.id, user.id)
-        await update_user_data(interaction.guild.id, user.id, {"xp": user_data["xp"] + amount})
-        await interaction.response.send_message(f"✅ {amount} XP додано {user.mention}.", ephemeral=True)
 
-    @app_commands.command(name="removexp", description="Забрати XP")
-    @app_commands.describe(user="У кого забрати", amount="Скільки XP")
-    async def remove_xp(self, interaction: discord.Interaction, user: discord.Member, amount: int):
-        if not check_permissions(interaction):
-            await interaction.response.send_message("Недостатньо прав.", ephemeral=True)
-            return
-        user_data = await get_user_data(interaction.guild.id, user.id)
-        await update_user_data(interaction.guild.id, user.id, {"xp": max(user_data["xp"] - amount, 0)})
-        await interaction.response.send_message(f"🗑️ {amount} XP забрано у {user.mention}.", ephemeral=True)
+        user_data = await get_user_data(interaction.guild.id, користувач.id)
 
-    @app_commands.command(name="setlevel", description="Задати рівень")
-    @app_commands.describe(user="Кому", level="Новий рівень")
-    async def set_level(self, interaction: discord.Interaction, user: discord.Member, level: int):
-        if not check_permissions(interaction):
-            await interaction.response.send_message("Недостатньо прав.", ephemeral=True)
-            return
-        user_data = await get_user_data(interaction.guild.id, user.id)
-        await update_user_data(interaction.guild.id, user.id, {"level": level})
-        await interaction.response.send_message(f"🔧 Рівень {user.mention} встановлено на {level}.", ephemeral=True)
+        if дія.value == "add":
+            if кількість <= 0:
+                await interaction.response.send_message("❌ Кількість XP має бути більше 0.", ephemeral=True)
+                return
+            await update_user_data(interaction.guild.id, користувач.id, {"xp": user_data["xp"] + кількість})
+            await interaction.response.send_message(f"✅ {кількість} XP додано {користувач.mention}.", ephemeral=True)
 
-    @app_commands.command(name="resetxp", description="Скинути XP")
-    @app_commands.describe(user="Кому")
-    async def reset_xp(self, interaction: discord.Interaction, user: discord.Member):
-        if not check_permissions(interaction):
-            await interaction.response.send_message("Недостатньо прав.", ephemeral=True)
-            return
-        user_data = await get_user_data(interaction.guild.id, user.id)
-        await update_user_data(interaction.guild.id, user.id, {"xp": 0})
-        await interaction.response.send_message(f"🔄 XP {user.mention} скинуто до 0.", ephemeral=True)
+        elif дія.value == "remove":
+            if кількість <= 0:
+                await interaction.response.send_message("❌ Кількість XP має бути більше 0.", ephemeral=True)
+                return
+            new_xp = max(user_data["xp"] - кількість, 0)
+            await update_user_data(interaction.guild.id, користувач.id, {"xp": new_xp})
+            await interaction.response.send_message(f"🗑️ {кількість} XP забрано у {користувач.mention}.", ephemeral=True)
+
+        elif дія.value == "setlevel":
+            if кількість <= 0:
+                await interaction.response.send_message("❌ Рівень має бути більше 0.", ephemeral=True)
+                return
+            await update_user_data(interaction.guild.id, користувач.id, {"level": кількість})
+            await interaction.response.send_message(f"🔧 Рівень {користувач.mention} встановлено на {кількість}.", ephemeral=True)
+
+        elif дія.value == "reset":
+            await update_user_data(interaction.guild.id, користувач.id, {"xp": 0})
+            await interaction.response.send_message(f"🔄 XP {користувач.mention} скинуто до 0.", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(AdminCommands(bot))
