@@ -20,7 +20,7 @@ class AutomatedRoleSystem(commands.Cog):
         дія="Що налаштувати",
         role="Роль для управління",
         значення="Рівень або кількість днів",
-        мін_xp="Мінімум XP за період (для неактивності)",
+        мін_xp="Мінімум XP за período (для неактивности)",
         канал="Канал для звітів (опціонально)"
     )
     @app_commands.choices(дія=[
@@ -245,14 +245,13 @@ class AutomatedRoleSystem(commands.Cog):
     @tasks.loop(hours=24)  # Перевірка щодня
     async def daily_role_check(self):
         """Щоденна автоматична перевірка ролей"""
-        db = get_database()
         if db is None:
             return
 
         for guild in self.bot.guilds:
             try:
-                report = await self._process_guild_roles(guild, db)
-                await self._send_daily_report(guild, db, report)
+                report = await self._process_guild_roles(guild)
+                await self._send_daily_report(guild, report)
             except Exception as e:
                 print(f"Error processing roles for guild {guild.id}: {e}")
 
@@ -313,7 +312,7 @@ class AutomatedRoleSystem(commands.Cog):
 
         return assigned_count
 
-    async def _process_inactive_role(self, guild, db, role, days, min_xp):
+    async def _process_inactive_role(self, guild, role, days, min_xp):
         """Обробка зняття ролей за неактивність"""
         cutoff_date = datetime.now() - timedelta(days=days)
         cutoff_date_str = cutoff_date.strftime("%Y-%m-%d")
@@ -353,7 +352,7 @@ class AutomatedRoleSystem(commands.Cog):
 
         return removed_count
 
-    async def _send_daily_report(self, guild, db, report):
+    async def _send_daily_report(self, guild, report):
         """Надіслати щоденний звіт"""
         guild_settings = await db.guild_settings.find_one({"guild_id": str(guild.id)})
         if not guild_settings or not guild_settings.get("report_channel_id"):
