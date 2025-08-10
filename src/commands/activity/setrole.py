@@ -4,6 +4,8 @@ from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 from modules.db import get_database
 
+db = get_database()
+
 class AutomatedRoleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -34,7 +36,6 @@ class AutomatedRoleSystem(commands.Cog):
                        канал: discord.TextChannel = None):
         await interaction.response.defer(ephemeral=True)
 
-        db = get_database()
         if db is None:
             await interaction.followup.send("❌ Помилка: не вдалося підключитися до бази даних!")
             return
@@ -46,36 +47,36 @@ class AutomatedRoleSystem(commands.Cog):
                 if not role or значення <= 0:
                     await interaction.followup.send("❌ Потрібно вказати роль і рівень!")
                     return
-                await self._setup_level_role(interaction, db, guild, role, значення)
+                await self._setup_level_role(interaction, guild, role, значення)
 
             elif дія.value == "setup_inactive":
                 if not role or значення <= 0 or мін_xp <= 0:
                     await interaction.followup.send("❌ Потрібно вказати роль, дні і мінімум XP!")
                     return
-                await self._setup_inactive_role(interaction, db, guild, role, значення, мін_xp)
+                await self._setup_inactive_role(interaction, guild, role, значення, мін_xp)
 
             elif дія.value == "set_channel":
                 if not канал:
                     await interaction.followup.send("❌ Потрібно вказати канал!")
                     return
-                await self._set_report_channel(interaction, db, guild, канал)
+                await self._set_report_channel(interaction, guild, канал)
 
             elif дія.value == "show_config":
-                await self._show_config(interaction, db, guild)
+                await self._show_config(interaction, guild)
 
             elif дія.value == "remove_config":
                 if not role:
                     await interaction.followup.send("❌ Потрібно вказати роль!")
                     return
-                await self._remove_config(interaction, db, guild, role)
+                await self._remove_config(interaction, guild, role)
 
             elif дія.value == "run_now":
-                await self._run_check_now(interaction, db, guild)
+                await self._run_check_now(interaction, guild)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Сталася помилка: {str(e)}")
 
-    async def _setup_level_role(self, interaction, db, guild, role, level):
+    async def _setup_level_role(self, interaction, guild, role, level):
         """Налаштування автовидачі ролі за рівнем"""
         await db.auto_roles.update_one(
             {"guild_id": str(guild.id), "role_id": str(role.id)},
@@ -101,7 +102,7 @@ class AutomatedRoleSystem(commands.Cog):
 
         await interaction.followup.send(result)
 
-    async def _setup_inactive_role(self, interaction, db, guild, role, days, min_xp):
+    async def _setup_inactive_role(self, interaction, guild, role, days, min_xp):
         """Налаштування автозняття ролі за неактивність"""
         await db.auto_roles.update_one(
             {"guild_id": str(guild.id), "role_id": str(role.id)},
@@ -129,7 +130,7 @@ class AutomatedRoleSystem(commands.Cog):
 
         await interaction.followup.send(result)
 
-    async def _set_report_channel(self, interaction, db, guild, channel):
+    async def _set_report_channel(self, interaction, guild, channel):
         """Налаштування каналу для звітів"""
         await db.guild_settings.update_one(
             {"guild_id": str(guild.id)},
@@ -153,7 +154,7 @@ class AutomatedRoleSystem(commands.Cog):
 
         await interaction.followup.send(result)
 
-    async def _show_config(self, interaction, db, guild):
+    async def _show_config(self, interaction, guild):
         """Показати поточні налаштування"""
         auto_roles = await db.auto_roles.find({"guild_id": str(guild.id), "enabled": True}).to_list(100)
         guild_settings = await db.guild_settings.find_one({"guild_id": str(guild.id)})
@@ -194,7 +195,7 @@ class AutomatedRoleSystem(commands.Cog):
 
         await interaction.followup.send(result)
 
-    async def _remove_config(self, interaction, db, guild, role):
+    async def _remove_config(self, interaction, guild, role):
         """Видалити налаштування ролі"""
         result_db = await db.auto_roles.delete_one({
             "guild_id": str(guild.id),
@@ -212,11 +213,11 @@ class AutomatedRoleSystem(commands.Cog):
 
         await interaction.followup.send(result)
 
-    async def _run_check_now(self, interaction, db, guild):
+    async def _run_check_now(self, interaction, guild):
         """Запустити перевірку зараз"""
         await interaction.followup.send("🔄 Запускаю перевірку ролей...")
         
-        report = await self._process_guild_roles(guild, db)
+        report = await self._process_guild_roles(guild)
         
         result = f"```\n📊 РЕЗУЛЬТАТ ПЕРЕВІРКИ РОЛЕЙ\n\n"
         
@@ -245,7 +246,7 @@ class AutomatedRoleSystem(commands.Cog):
     async def daily_role_check(self):
         """Щоденна автоматична перевірка ролей"""
         db = get_database()
-        if not db:
+        if db is None:
             return
 
         for guild in self.bot.guilds:
@@ -255,7 +256,7 @@ class AutomatedRoleSystem(commands.Cog):
             except Exception as e:
                 print(f"Error processing roles for guild {guild.id}: {e}")
 
-    async def _process_guild_roles(self, guild, db):
+    async def _process_guild_roles(self, guild):
         """Обробка ролей для гільдії"""
         auto_roles = await db.auto_roles.find({"guild_id": str(guild.id), "enabled": True}).to_list(100)
         
@@ -273,13 +274,13 @@ class AutomatedRoleSystem(commands.Cog):
 
             try:
                 if config["type"] == "level":
-                    assigned = await self._process_level_role(guild, db, role, config["required_level"])
+                    assigned = await self._process_level_role(guild, role, config["required_level"])
                     report["level_assigned"] += assigned
                     if assigned > 0:
                         report["level_details"].append(f"• {role.name}: +{assigned}")
 
                 elif config["type"] == "inactive":
-                    removed = await self._process_inactive_role(guild, db, role, config["check_days"], config["min_xp"])
+                    removed = await self._process_inactive_role(guild, role, config["check_days"], config["min_xp"])
                     report["inactive_removed"] += removed
                     if removed > 0:
                         report["inactive_details"].append(f"• {role.name}: -{removed}")
@@ -288,7 +289,7 @@ class AutomatedRoleSystem(commands.Cog):
 
         return report
 
-    async def _process_level_role(self, guild, db, role, required_level):
+    async def _process_level_role(self, guild, role, required_level):
         """Обробка ролей за рівнем"""
         users_str = await db.users.find({"guild_id": str(guild.id)}).to_list(1000)
         users_int = await db.users.find({"guild_id": guild.id}).to_list(1000)
