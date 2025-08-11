@@ -14,156 +14,106 @@ class AutomatedRoleSystem(commands.Cog):
     def cog_unload(self):
         self.daily_role_check.cancel()
 
-    role_system = app_commands.Group(name="roles", description="Автоматична система ролей")
+    role_setup = app_commands.Group(name="role-setup", description="Налаштування автоматичних ролей")
+    role_manage = app_commands.Group(name="role-manage", description="Управління системою ролей")
 
-    @role_system.command(name="setup", description="Налаштування автоматичних ролей та каналу звітів")
+    @role_setup.command(name="level", description="Налаштувати автоматичну видачу ролі за рівнем")
     @app_commands.default_permissions(manage_roles=True)
     @app_commands.describe(
-        дія="Тип налаштування",
-        роль="Роль для налаштування (не потрібна для каналу)",
-        значення1="Рівень (для автовидачі) або Дні (для автозняття)",
-        значення2="Мінімум XP за період (тільки для автозняття)",
-        канал="Канал для звітів (тільки для встановлення каналу)"
+        роль="Роль для видачі",
+        рівень="Рівень для отримання ролі"
     )
-    @app_commands.choices(дія=[
-        app_commands.Choice(name="🎯 Автовидача за рівнем", value="level"),
-        app_commands.Choice(name="🗑️ Автозняття за неактивність", value="inactive"),
-        app_commands.Choice(name="📊 Встановити канал звітів", value="channel"),
-        app_commands.Choice(name="❌ Видалити роль", value="delete")
-    ])
-    async def setup(
-        self, 
-        interaction: discord.Interaction, 
-        дія: app_commands.Choice[str],
-        роль: discord.Role = None,
-        значення1: int = None,
-        значення2: int = None,
-        канал: discord.TextChannel = None
-    ):
+    async def level_role(self, interaction: discord.Interaction, роль: discord.Role, рівень: int):
         await interaction.response.defer(ephemeral=True)
 
         if db is None:
             await interaction.followup.send("❌ Помилка: не вдалося підключитися до бази даних!")
             return
 
+        if рівень <= 0:
+            await interaction.followup.send("❌ Рівень повинен бути більше 0!")
+            return
+
         guild = interaction.guild
 
         try:
-            if дія.value == "level":
-                # Автовидача за рівнем
-                if not роль or not значення1:
-                    await interaction.followup.send("❌ Для автовидачі потрібно вказати роль та рівень!")
-                    return
+            await db.auto_roles.update_one(
+                {"guild_id": str(guild.id), "role_id": str(роль.id)},
+                {
+                    "$set": {
+                        "guild_id": str(guild.id),
+                        "role_id": str(роль.id),
+                        "type": "level",
+                        "required_level": рівень,
+                        "enabled": True,
+                        "created_by": interaction.user.id,
+                        "created_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
 
-                if значення1 <= 0:
-                    await interaction.followup.send("❌ Рівень повинен бути більше 0!")
-                    return
-
-                await db.auto_roles.update_one(
-                    {"guild_id": str(guild.id), "role_id": str(роль.id)},
-                    {
-                        "$set": {
-                            "guild_id": str(guild.id),
-                            "role_id": str(роль.id),
-                            "type": "level",
-                            "required_level": значення1,
-                            "enabled": True,
-                            "created_by": interaction.user.id,
-                            "created_at": datetime.utcnow()
-                        }
-                    },
-                    upsert=True
-                )
-
-                result = f"```\n✅ АВТОВИДАЧА НАЛАШТОВАНА\n\n"
-                result += f"Роль: {роль.name}\n"
-                result += f"Рівень: {значення1}\n```"
-
-            elif дія.value == "inactive":
-                # Автозняття за неактивність
-                if not роль or not значення1 or not значення2:
-                    await interaction.followup.send("❌ Для автозняття потрібно вказати роль, дні та мінімум XP!")
-                    return
-
-                if значення1 <= 0 or значення2 <= 0:
-                    await interaction.followup.send("❌ Дні та XP повинні бути більше 0!")
-                    return
-
-                await db.auto_roles.update_one(
-                    {"guild_id": str(guild.id), "role_id": str(роль.id)},
-                    {
-                        "$set": {
-                            "guild_id": str(guild.id),
-                            "role_id": str(роль.id),
-                            "type": "inactive",
-                            "check_days": значення1,
-                            "min_xp": значення2,
-                            "enabled": True,
-                            "created_by": interaction.user.id,
-                            "created_at": datetime.utcnow()
-                        }
-                    },
-                    upsert=True
-                )
-
-                result = f"```\n🗑️ АВТОЗНЯТТЯ НАЛАШТОВАНО\n\n"
-                result += f"Роль: {роль.name}\n"
-                result += f"Період: {значення1} днів\n"
-                result += f"Мін. XP: {значення2}\n```"
-
-            elif дія.value == "channel":
-                # Встановлення каналу звітів
-                if not канал:
-                    await interaction.followup.send("❌ Потрібно вказати канал для звітів!")
-                    return
-
-                await db.guild_settings.update_one(
-                    {"guild_id": str(guild.id)},
-                    {
-                        "$set": {
-                            "guild_id": str(guild.id),
-                            "report_channel_id": str(канал.id),
-                            "updated_by": interaction.user.id,
-                            "updated_at": datetime.utcnow()
-                        }
-                    },
-                    upsert=True
-                )
-
-                result = f"```\n📊 КАНАЛ ВСТАНОВЛЕНО\n\n"
-                result += f"Канал: #{канал.name}\n```"
-
-            elif дія.value == "delete":
-                # Видалення ролі
-                if not роль:
-                    await interaction.followup.send("❌ Потрібно вказати роль для видалення!")
-                    return
-
-                result_db = await db.auto_roles.delete_one({
-                    "guild_id": str(guild.id),
-                    "role_id": str(роль.id)
-                })
-
-                if result_db.deleted_count > 0:
-                    result = f"```\n✅ ВИДАЛЕНО\n\n"
-                    result += f"Роль: {роль.name}\n```"
-                else:
-                    result = f"```\n❌ НЕ ЗНАЙДЕНО\n\n"
-                    result += f"Роль: {роль.name}\n```"
+            result = f"```\n✅ АВТОВИДАЧА НАЛАШТОВАНА\n\n"
+            result += f"Роль: {роль.name}\n"
+            result += f"Рівень: {рівень}\n```"
 
             await interaction.followup.send(result)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Помилка: {str(e)}")
 
-    @role_system.command(name="manage", description="Управління системою: перевірка, стан")
+    @role_setup.command(name="inactive", description="Налаштувати автоматичне зняття ролі за неактивність")
     @app_commands.default_permissions(manage_roles=True)
-    @app_commands.describe(дія="Дія для виконання")
-    @app_commands.choices(дія=[
-        app_commands.Choice(name="⚙️ Показати стан системи", value="status"),
-        app_commands.Choice(name="🔄 Запустити перевірку зараз", value="check")
-    ])
-    async def manage(self, interaction: discord.Interaction, дія: app_commands.Choice[str]):
+    @app_commands.describe(
+        роль="Роль для зняття",
+        дні="Днів для перевірки",
+        мін_xp="Мінімум XP за період"
+    )
+    async def inactive_role(self, interaction: discord.Interaction, роль: discord.Role, дні: int, мін_xp: int):
+        await interaction.response.defer(ephemeral=True)
+
+        if db is None:
+            await interaction.followup.send("❌ Помилка: не вдалося підключитися до бази даних!")
+            return
+
+        if дні <= 0 or мін_xp <= 0:
+            await interaction.followup.send("❌ Дні та XP повинні бути більше 0!")
+            return
+
+        guild = interaction.guild
+
+        try:
+            await db.auto_roles.update_one(
+                {"guild_id": str(guild.id), "role_id": str(роль.id)},
+                {
+                    "$set": {
+                        "guild_id": str(guild.id),
+                        "role_id": str(роль.id),
+                        "type": "inactive",
+                        "check_days": дні,
+                        "min_xp": мін_xp,
+                        "enabled": True,
+                        "created_by": interaction.user.id,
+                        "created_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+
+            result = f"```\n🗑️ АВТОЗНЯТТЯ НАЛАШТОВАНО\n\n"
+            result += f"Роль: {роль.name}\n"
+            result += f"Період: {дні} днів\n"
+            result += f"Мін. XP: {мін_xp}\n```"
+
+            await interaction.followup.send(result)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Помилка: {str(e)}")
+
+    @role_setup.command(name="channel", description="Встановити канал для звітів")
+    @app_commands.default_permissions(manage_roles=True)
+    @app_commands.describe(канал="Канал для звітів")
+    async def report_channel(self, interaction: discord.Interaction, канал: discord.TextChannel):
         await interaction.response.defer(ephemeral=True)
 
         if db is None:
@@ -173,78 +123,152 @@ class AutomatedRoleSystem(commands.Cog):
         guild = interaction.guild
 
         try:
-            if дія.value == "status":
-                # Показати стан системи
-                auto_roles = await db.auto_roles.find({"guild_id": str(guild.id), "enabled": True}).to_list(100)
-                guild_settings = await db.guild_settings.find_one({"guild_id": str(guild.id)})
+            await db.guild_settings.update_one(
+                {"guild_id": str(guild.id)},
+                {
+                    "$set": {
+                        "guild_id": str(guild.id),
+                        "report_channel_id": str(канал.id),
+                        "updated_by": interaction.user.id,
+                        "updated_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
 
-                result = "```\n⚙️ СТАН СИСТЕМИ\n\n"
+            result = f"```\n📊 КАНАЛ ВСТАНОВЛЕНО\n\n"
+            result += f"Канал: #{канал.name}\n```"
 
-                if not auto_roles:
-                    result += "❌ Немає налаштувань\n"
-                else:
-                    level_roles = []
-                    inactive_roles = []
+            await interaction.followup.send(result)
 
-                    for config in auto_roles:
-                        role = guild.get_role(int(config["role_id"]))
-                        if not role:
-                            continue
+        except Exception as e:
+            await interaction.followup.send(f"❌ Помилка: {str(e)}")
 
-                        if config["type"] == "level":
-                            users_str = await db.users.find({"guild_id": str(guild.id)}).to_list(1000)
-                            users_int = await db.users.find({"guild_id": guild.id}).to_list(1000)
-                            users = users_str if len(users_str) > 0 else users_int
-                            
-                            eligible = len([u for u in users if u.get("level", 0) >= config["required_level"]])
-                            has_role = len([m for m in guild.members if role in m.roles])
-                            
-                            level_roles.append(f"  • {role.name} - Рівень {config['required_level']} (Має: {has_role}, Підходить: {eligible})")
-                        elif config["type"] == "inactive":
-                            has_role = len([m for m in guild.members if role in m.roles])
-                            inactive_roles.append(f"  • {role.name} - {config['check_days']} днів, {config['min_xp']} XP (Має: {has_role})")
+    @role_setup.command(name="delete", description="Видалити налаштування ролі")
+    @app_commands.default_permissions(manage_roles=True)
+    @app_commands.describe(роль="Роль для видалення")
+    async def delete_role(self, interaction: discord.Interaction, роль: discord.Role):
+        await interaction.response.defer(ephemeral=True)
 
-                    if level_roles:
-                        result += "🎯 АВТОВИДАЧА:\n"
-                        result += "\n".join(level_roles) + "\n\n"
+        if db is None:
+            await interaction.followup.send("❌ Помилка: не вдалося підключитися до бази даних!")
+            return
 
-                    if inactive_roles:
-                        result += "🗑️ АВТОЗНЯТТЯ:\n"
-                        result += "\n".join(inactive_roles) + "\n\n"
+        guild = interaction.guild
 
-                # Канал
-                report_channel = None
-                if guild_settings and guild_settings.get("report_channel_id"):
-                    report_channel = guild.get_channel(int(guild_settings["report_channel_id"]))
+        try:
+            result_db = await db.auto_roles.delete_one({
+                "guild_id": str(guild.id),
+                "role_id": str(роль.id)
+            })
 
-                result += f"📊 КАНАЛ: {report_channel.name if report_channel else '❌ Не встановлено'}\n```"
+            if result_db.deleted_count > 0:
+                result = f"```\n✅ ВИДАЛЕНО\n\n"
+                result += f"Роль: {роль.name}\n```"
+            else:
+                result = f"```\n❌ НЕ ЗНАЙДЕНО\n\n"
+                result += f"Роль: {роль.name}\n```"
 
-                await interaction.followup.send(result)
+            await interaction.followup.send(result)
 
-            elif дія.value == "check":
-                # Запустити перевірку зараз
-                await interaction.followup.send("🔄 Перевіряю...")
+        except Exception as e:
+            await interaction.followup.send(f"❌ Помилка: {str(e)}")
+
+    @role_manage.command(name="status", description="Показати стан системи")
+    @app_commands.default_permissions(manage_roles=True)
+    async def status(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        if db is None:
+            await interaction.followup.send("❌ Помилка: не вдалося підключитися до бази даних!")
+            return
+
+        guild = interaction.guild
+
+        try:
+            auto_roles = await db.auto_roles.find({"guild_id": str(guild.id), "enabled": True}).to_list(100)
+            guild_settings = await db.guild_settings.find_one({"guild_id": str(guild.id)})
+
+            result = "```\n⚙️ СТАН СИСТЕМИ\n\n"
+
+            if not auto_roles:
+                result += "❌ Немає налаштувань\n"
+            else:
+                level_roles = []
+                inactive_roles = []
+
+                for config in auto_roles:
+                    role = guild.get_role(int(config["role_id"]))
+                    if not role:
+                        continue
+
+                    if config["type"] == "level":
+                        users_str = await db.users.find({"guild_id": str(guild.id)}).to_list(1000)
+                        users_int = await db.users.find({"guild_id": guild.id}).to_list(1000)
+                        users = users_str if len(users_str) > 0 else users_int
+                        
+                        eligible = len([u for u in users if u.get("level", 0) >= config["required_level"]])
+                        has_role = len([m for m in guild.members if role in m.roles])
+                        
+                        level_roles.append(f"  • {role.name} - Рівень {config['required_level']} (Має: {has_role}, Підходить: {eligible})")
+                    elif config["type"] == "inactive":
+                        has_role = len([m for m in guild.members if role in m.roles])
+                        inactive_roles.append(f"  • {role.name} - {config['check_days']} днів, {config['min_xp']} XP (Має: {has_role})")
+
+                if level_roles:
+                    result += "🎯 АВТОВИДАЧА:\n"
+                    result += "\n".join(level_roles) + "\n\n"
+
+                if inactive_roles:
+                    result += "🗑️ АВТОЗНЯТТЯ:\n"
+                    result += "\n".join(inactive_roles) + "\n\n"
+
+            # Канал
+            report_channel = None
+            if guild_settings and guild_settings.get("report_channel_id"):
+                report_channel = guild.get_channel(int(guild_settings["report_channel_id"]))
+
+            result += f"📊 КАНАЛ: {report_channel.name if report_channel else '❌ Не встановлено'}\n```"
+
+            await interaction.followup.send(result)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Помилка: {str(e)}")
+
+    @role_manage.command(name="check", description="Запустити перевірку зараз")
+    @app_commands.default_permissions(manage_roles=True)
+    async def check_now(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        if db is None:
+            await interaction.followup.send("❌ Помилка: не вдалося підключитися до бази даних!")
+            return
+
+        guild = interaction.guild
+
+        try:
+            await interaction.followup.send("🔄 Перевіряю...")
+            
+            report = await self._process_guild_roles(guild)
+            
+            result = f"```\n📊 РЕЗУЛЬТАТ\n\n"
+            
+            if report["level_assigned"] > 0:
+                result += f"🎯 Видано: {report['level_assigned']}\n"
+                for detail in report["level_details"]:
+                    result += f"   {detail}\n"
+            
+            if report["inactive_removed"] > 0:
+                result += f"🗑️ Знято: {report['inactive_removed']}\n"
+                for detail in report["inactive_details"]:
+                    result += f"   {detail}\n"
                 
-                report = await self._process_guild_roles(guild)
-                
-                result = f"```\n📊 РЕЗУЛЬТАТ\n\n"
-                
-                if report["level_assigned"] > 0:
-                    result += f"🎯 Видано: {report['level_assigned']}\n"
-                    for detail in report["level_details"]:
-                        result += f"   {detail}\n"
-                
-                if report["inactive_removed"] > 0:
-                    result += f"🗑️ Знято: {report['inactive_removed']}\n"
-                    for detail in report["inactive_details"]:
-                        result += f"   {detail}\n"
-                    
-                if report["level_assigned"] == 0 and report["inactive_removed"] == 0:
-                    result += "✅ Все актуально\n"
+            if report["level_assigned"] == 0 and report["inactive_removed"] == 0:
+                result += "✅ Все актуально\n"
 
-                result += f"\nВиконав: {interaction.user.display_name}\n```"
-                
-                await interaction.edit_original_response(content=result)
+            result += f"\nВиконав: {interaction.user.display_name}\n```"
+            
+            await interaction.edit_original_response(content=result)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Помилка: {str(e)}")
