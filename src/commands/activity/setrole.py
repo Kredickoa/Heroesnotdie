@@ -3,48 +3,52 @@ from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
 from modules.db import get_database
+import asyncio
 
 db = get_database()
 
-# Модальні форми для налаштувань
-class LevelRoleModal(discord.ui.Modal, title="Налаштувати роль за рівнем"):
-    role_input = discord.ui.TextInput(
-        label="ID або згадування ролі",
-        placeholder="@роль або 123456789",
-        required=True
-    )
-    level_input = discord.ui.TextInput(
-        label="Потрібний рівень",
-        placeholder="Введіть число від 1 до 100",
-        max_length=3,
-        required=True
-    )
+class RoleManagementView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
 
-    async def on_submit(self, interaction: discord.Interaction):
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Перевіряє чи користувач має право використовувати кнопки"""
+        if not interaction.user.guild_permissions.manage_roles:
+            await interaction.response.send_message("❌ У тебе немає прав для управління ролями!", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(emoji="⬆️", label="Роль за рівнем", style=discord.ButtonStyle.secondary, row=0)
+    async def level_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Налаштувати автовидачу ролі за рівнем"""
+        await interaction.response.send_message("🎯 **Налаштування автовидачі ролі за рівнем**\n\nВкажи роль (згадування @роль або ID):", ephemeral=True)
+        
+        def check(message):
+            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
+
         try:
-            # Знаходимо роль
-            role_input = self.role_input.value.strip()
-            role = None
-            
-            if role_input.startswith('<@&') and role_input.endswith('>'):
-                role_id = role_input[3:-1]
-                role = interaction.guild.get_role(int(role_id))
-            else:
-                try:
-                    role = interaction.guild.get_role(int(role_input))
-                except:
-                    pass
+            # Отримуємо роль
+            role_msg = await interaction.client.wait_for('message', check=check)
+            role = await self._parse_role(interaction.guild, role_msg.content.strip())
             
             if not role:
-                await interaction.response.send_message("❌ Роль не знайдено!", ephemeral=True)
+                await interaction.followup.send("❌ Роль не знайдено! Спробуй ще раз.", ephemeral=True)
                 return
+
+            await interaction.followup.send(f"✅ Роль **{role.name}** знайдено!\n\nТепер вкажи потрібний рівень (1-100):", ephemeral=True)
             
-            # Перевіряємо рівень
-            level = int(self.level_input.value)
-            if level <= 0 or level > 100:
-                await interaction.response.send_message("❌ Рівень повинен бути від 1 до 100!", ephemeral=True)
+            # Отримуємо рівень
+            level_msg = await interaction.client.wait_for('message', check=check)
+            
+            try:
+                level = int(level_msg.content.strip())
+                if level <= 0 or level > 100:
+                    await interaction.followup.send("❌ Рівень повинен бути від 1 до 100!", ephemeral=True)
+                    return
+            except ValueError:
+                await interaction.followup.send("❌ Введи правильне число для рівня!", ephemeral=True)
                 return
-            
+
             # Зберігаємо в БД
             await db.auto_roles.update_one(
                 {"guild_id": str(interaction.guild.id), "role_id": str(role.id)},
@@ -62,62 +66,56 @@ class LevelRoleModal(discord.ui.Modal, title="Налаштувати роль з
                 upsert=True
             )
             
-            await interaction.response.send_message(f"✅ Налаштовано автовидачу ролі **{role.name}** за **{level} рівень**!", ephemeral=True)
-            
-        except ValueError:
-            await interaction.response.send_message("❌ Введіть правильне число для рівня!", ephemeral=True)
+            await interaction.followup.send(f"✅ Налаштовано автовидачу ролі **{role.name}** за **{level} рівень**!", ephemeral=True)
+
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
 
-class InactiveRoleModal(discord.ui.Modal, title="Налаштувати роль за неактивність"):
-    role_input = discord.ui.TextInput(
-        label="ID або згадування ролі",
-        placeholder="@роль або 123456789",
-        required=True
-    )
-    days_input = discord.ui.TextInput(
-        label="Днів для перевірки",
-        placeholder="Введіть число від 1 до 365",
-        max_length=3,
-        required=True
-    )
-    xp_input = discord.ui.TextInput(
-        label="Мінімум XP за період",
-        placeholder="Введіть мінімальну кількість XP",
-        required=True
-    )
+    @discord.ui.button(emoji="⬇️", label="Роль за неактивність", style=discord.ButtonStyle.secondary, row=0)
+    async def inactive_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Налаштувати автозняття ролі за неактивність"""
+        await interaction.response.send_message("🗑️ **Налаштування автозняття ролі за неактивність**\n\nВкажи роль (згадування @роль або ID):", ephemeral=True)
+        
+        def check(message):
+            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
 
-    async def on_submit(self, interaction: discord.Interaction):
         try:
-            # Знаходимо роль
-            role_input = self.role_input.value.strip()
-            role = None
-            
-            if role_input.startswith('<@&') and role_input.endswith('>'):
-                role_id = role_input[3:-1]
-                role = interaction.guild.get_role(int(role_id))
-            else:
-                try:
-                    role = interaction.guild.get_role(int(role_input))
-                except:
-                    pass
+            # Отримуємо роль
+            role_msg = await interaction.client.wait_for('message', check=check)
+            role = await self._parse_role(interaction.guild, role_msg.content.strip())
             
             if not role:
-                await interaction.response.send_message("❌ Роль не знайдено!", ephemeral=True)
+                await interaction.followup.send("❌ Роль не знайдено! Спробуй ще раз.", ephemeral=True)
                 return
+
+            await interaction.followup.send(f"✅ Роль **{role.name}** знайдено!\n\nВкажи кількість днів для перевірки (1-365):", ephemeral=True)
             
-            # Перевіряємо параметри
-            days = int(self.days_input.value)
-            min_xp = int(self.xp_input.value)
+            # Отримуємо дні
+            days_msg = await interaction.client.wait_for('message', check=check)
             
-            if days <= 0 or days > 365:
-                await interaction.response.send_message("❌ Кількість днів повинна бути від 1 до 365!", ephemeral=True)
+            try:
+                days = int(days_msg.content.strip())
+                if days <= 0 or days > 365:
+                    await interaction.followup.send("❌ Кількість днів повинна бути від 1 до 365!", ephemeral=True)
+                    return
+            except ValueError:
+                await interaction.followup.send("❌ Введи правильне число для днів!", ephemeral=True)
                 return
-                
-            if min_xp <= 0:
-                await interaction.response.send_message("❌ Мінімум XP повинен бути більше 0!", ephemeral=True)
-                return
+
+            await interaction.followup.send(f"✅ Період: **{days} днів**\n\nВкажи мінімум XP за цей період:", ephemeral=True)
             
+            # Отримуємо XP
+            xp_msg = await interaction.client.wait_for('message', check=check)
+            
+            try:
+                min_xp = int(xp_msg.content.strip())
+                if min_xp <= 0:
+                    await interaction.followup.send("❌ Мінімум XP повинен бути більше 0!", ephemeral=True)
+                    return
+            except ValueError:
+                await interaction.followup.send("❌ Введи правильне число для XP!", ephemeral=True)
+                return
+
             # Зберігаємо в БД
             await db.auto_roles.update_one(
                 {"guild_id": str(interaction.guild.id), "role_id": str(role.id)},
@@ -136,39 +134,28 @@ class InactiveRoleModal(discord.ui.Modal, title="Налаштувати роль
                 upsert=True
             )
             
-            await interaction.response.send_message(f"✅ Налаштовано автозняття ролі **{role.name}** за неактивність ({days} днів, <{min_xp} XP)!", ephemeral=True)
-            
-        except ValueError:
-            await interaction.response.send_message("❌ Введіть правильні числа!", ephemeral=True)
+            await interaction.followup.send(f"✅ Налаштовано автозняття ролі **{role.name}** за неактивність ({days} днів, <{min_xp} XP)!", ephemeral=True)
+
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
 
-class ReportChannelModal(discord.ui.Modal, title="Встановити канал для звітів"):
-    channel_input = discord.ui.TextInput(
-        label="ID або згадування каналу",
-        placeholder="#канал або 123456789",
-        required=True
-    )
+    @discord.ui.button(emoji="📊", label="Канал звітів", style=discord.ButtonStyle.secondary, row=0)
+    async def report_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Встановити канал для звітів"""
+        await interaction.response.send_message("📊 **Встановлення каналу для звітів**\n\nВкажи канал (згадування #канал або ID):", ephemeral=True)
+        
+        def check(message):
+            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
 
-    async def on_submit(self, interaction: discord.Interaction):
         try:
-            # Знаходимо канал
-            channel_input = self.channel_input.value.strip()
-            channel = None
-            
-            if channel_input.startswith('<#') and channel_input.endswith('>'):
-                channel_id = channel_input[2:-1]
-                channel = interaction.guild.get_channel(int(channel_id))
-            else:
-                try:
-                    channel = interaction.guild.get_channel(int(channel_input))
-                except:
-                    pass
+            # Отримуємо канал
+            channel_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
+            channel = await self._parse_channel(interaction.guild, channel_msg.content.strip())
             
             if not channel or not isinstance(channel, discord.TextChannel):
-                await interaction.response.send_message("❌ Текстовий канал не знайдено!", ephemeral=True)
+                await interaction.followup.send("❌ Текстовий канал не знайдено! Спробуй ще раз.", ephemeral=True)
                 return
-            
+
             # Зберігаємо в БД
             await db.guild_settings.update_one(
                 {"guild_id": str(interaction.guild.id)},
@@ -183,37 +170,30 @@ class ReportChannelModal(discord.ui.Modal, title="Встановити кана�
                 upsert=True
             )
             
-            await interaction.response.send_message(f"✅ Канал для звітів встановлено: {channel.mention}!", ephemeral=True)
-            
+            await interaction.followup.send(f"✅ Канал для звітів встановлено: {channel.mention}!", ephemeral=True)
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
 
-class DeleteRoleModal(discord.ui.Modal, title="Видалити налаштування ролі"):
-    role_input = discord.ui.TextInput(
-        label="ID або згадування ролі",
-        placeholder="@роль або 123456789",
-        required=True
-    )
+    @discord.ui.button(emoji="🗑️", label="Видалити роль", style=discord.ButtonStyle.secondary, row=0)
+    async def delete_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Видалити налаштування ролі"""
+        await interaction.response.send_message("🗑️ **Видалення налаштувань ролі**\n\nВкажи роль для видалення (згадування @роль або ID):", ephemeral=True)
+        
+        def check(message):
+            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
 
-    async def on_submit(self, interaction: discord.Interaction):
         try:
-            # Знаходимо роль
-            role_input = self.role_input.value.strip()
-            role = None
-            
-            if role_input.startswith('<@&') and role_input.endswith('>'):
-                role_id = role_input[3:-1]
-                role = interaction.guild.get_role(int(role_id))
-            else:
-                try:
-                    role = interaction.guild.get_role(int(role_input))
-                except:
-                    pass
+            # Отримуємо роль
+            role_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
+            role = await self._parse_role(interaction.guild, role_msg.content.strip())
             
             if not role:
-                await interaction.response.send_message("❌ Роль не знайдено!", ephemeral=True)
+                await interaction.followup.send("❌ Роль не знайдено! Спробуй ще раз.", ephemeral=True)
                 return
-            
+
             # Видаляємо з БД
             result = await db.auto_roles.delete_one({
                 "guild_id": str(interaction.guild.id),
@@ -221,47 +201,50 @@ class DeleteRoleModal(discord.ui.Modal, title="Видалити налаштув
             })
             
             if result.deleted_count > 0:
-                await interaction.response.send_message(f"✅ Видалено налаштування для ролі **{role.name}**!", ephemeral=True)
+                await interaction.followup.send(f"✅ Видалено налаштування для ролі **{role.name}**!", ephemeral=True)
             else:
-                await interaction.response.send_message(f"❌ Налаштування для ролі **{role.name}** не знайдено!", ephemeral=True)
-            
+                await interaction.followup.send(f"❌ Налаштування для ролі **{role.name}** не знайдено!", ephemeral=True)
+
+        except asyncio.TimeoutError:
+            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Помилка: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
 
-class RoleManagementView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
+    async def _parse_role(self, guild, role_input):
+        """Парсить роль з введення користувача"""
+        role = None
+        
+        if role_input.startswith('<@&') and role_input.endswith('>'):
+            role_id = role_input[3:-1]
+            try:
+                role = guild.get_role(int(role_id))
+            except:
+                pass
+        else:
+            try:
+                role = guild.get_role(int(role_input))
+            except:
+                pass
+        
+        return role
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Перевіряє чи користувач має право використовувати кнопки"""
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.response.send_message("❌ У тебе немає прав для управління ролями!", ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(emoji="⬆️", label="Роль за рівнем", style=discord.ButtonStyle.secondary, row=0)
-    async def level_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Налаштувати автовидачу ролі за рівнем"""
-        modal = LevelRoleModal()
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(emoji="⬇️", label="Роль за неактивність", style=discord.ButtonStyle.secondary, row=0)
-    async def inactive_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Налаштувати автозняття ролі за неактивність"""
-        modal = InactiveRoleModal()
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(emoji="📊", label="Канал звітів", style=discord.ButtonStyle.secondary, row=0)
-    async def report_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Встановити канал для звітів"""
-        modal = ReportChannelModal()
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(emoji="🗑️", label="Видалити роль", style=discord.ButtonStyle.secondary, row=0)
-    async def delete_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Видалити налаштування ролі"""
-        modal = DeleteRoleModal()
-        await interaction.response.send_modal(modal)
+    async def _parse_channel(self, guild, channel_input):
+        """Парсить канал з введення користувача"""
+        channel = None
+        
+        if channel_input.startswith('<#') and channel_input.endswith('>'):
+            channel_id = channel_input[2:-1]
+            try:
+                channel = guild.get_channel(int(channel_id))
+            except:
+                pass
+        else:
+            try:
+                channel = guild.get_channel(int(channel_input))
+            except:
+                pass
+        
+        return channel
 
     @discord.ui.button(emoji="📋", label="Статус системи", style=discord.ButtonStyle.primary, row=1)
     async def system_status(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -388,7 +371,8 @@ class AutomatedRoleSystem(commands.Cog):
                 "📊 **Канал звітів** — встановити канал для щоденних звітів\n"
                 "🗑️ **Видалити роль** — видалити налаштування для ролі\n"
                 "📋 **Статус системи** — переглянути поточні налаштування\n"
-                "🔄 **Перевірити зараз** — запустити перевірку ролей негайно"
+                "🔄 **Перевірити зараз** — запустити перевірку ролей негайно\n\n"
+                "💡 **Після натискання кнопки пишіть відповідь у цей же канал!**"
             )
         )
         embed.set_footer(text="Кнопки працюють постійно • Потрібні права: Управління ролями")
