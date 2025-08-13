@@ -209,9 +209,8 @@ class UserMentionModal(discord.ui.Modal):
             await interaction.response.send_message(f"✅ Власність кімнати передано користувачеві {target_user.display_name}", ephemeral=True)
 
 class RoomManagementView(discord.ui.View):
-    def __init__(self, user_id):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.user_id = user_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Перевіряє чи користувач має право використовувати кнопки"""
@@ -225,19 +224,19 @@ class RoomManagementView(discord.ui.View):
             return False
         return True
 
-    @discord.ui.button(emoji="<:pen:1405110194651795466>", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="<:pen:1405110194651795466>", style=discord.ButtonStyle.secondary, row=0, custom_id="room_edit_name")
     async def edit_name(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Змінити назву кімнати"""
         modal = RoomNameModal(interaction.user.id)
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:members_limit:1405110200708497419>", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="<:members_limit:1405110200708497419>", style=discord.ButtonStyle.secondary, row=0, custom_id="room_set_limit")
     async def set_limit(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Встановити ліміт користувачів"""
         modal = RoomLimitModal(interaction.user.id)
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:lock_unlock:1405110188259934298>", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="<:lock_unlock:1405110188259934298>", style=discord.ButtonStyle.secondary, row=0, custom_id="room_toggle_lock")
     async def toggle_lock(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Закрити/відкрити доступ"""
         user_room = await db.private_rooms.find_one({
@@ -273,7 +272,7 @@ class RoomManagementView(discord.ui.View):
                     )
                     await interaction.response.send_message("🔒 Кімнату закрито для нових користувачів!", ephemeral=True)
 
-    @discord.ui.button(emoji="<:eye_closed:1405110183385894932>", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="<:eye_closed:1405110183385894932>", style=discord.ButtonStyle.secondary, row=0, custom_id="room_toggle_visibility")
     async def toggle_visibility(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Сховати/показати кімнату"""
         user_room = await db.private_rooms.find_one({
@@ -309,37 +308,37 @@ class RoomManagementView(discord.ui.View):
                     )
                     await interaction.response.send_message("🙈 Кімнату сховано від інших користувачів!", ephemeral=True)
 
-    @discord.ui.button(emoji="<:plus:1405110182014357595>", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="<:plus:1405110182014357595>", style=discord.ButtonStyle.secondary, row=0, custom_id="room_manage_access")
     async def manage_access(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Управління доступом користувачів"""
         modal = UserMentionModal(interaction.user.id, "access", "Управління доступом")
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:microphone:1405110190239514654>", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(emoji="<:microphone:1405110190239514654>", style=discord.ButtonStyle.secondary, row=1, custom_id="room_manage_mic")
     async def manage_mic(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Управління правами мікрофону"""
         modal = UserMentionModal(interaction.user.id, "mic", "Управління мікрофоном")
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:kick_user:1405110186313519226>", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(emoji="<:kick_user:1405110186313519226>", style=discord.ButtonStyle.secondary, row=1, custom_id="room_kick_user")
     async def kick_user(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Вигнати користувача"""
         modal = UserMentionModal(interaction.user.id, "kick", "Вигнати користувача")
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:reset:1405110197248069733>", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(emoji="<:reset:1405110197248069733>", style=discord.ButtonStyle.secondary, row=1, custom_id="room_reset_permissions")
     async def reset_permissions(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Скинути права користувача"""
         modal = UserMentionModal(interaction.user.id, "reset", "Скинути права")
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:star_owner:1405110192462495744>", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(emoji="<:star_owner:1405110192462495744>", style=discord.ButtonStyle.secondary, row=1, custom_id="room_transfer_ownership")
     async def transfer_ownership(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Передати власність"""
         modal = UserMentionModal(interaction.user.id, "owner", "Передати власність")
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(emoji="<:room_info:1405110199127248896>", style=discord.ButtonStyle.primary, row=1)
+    @discord.ui.button(emoji="<:room_info:1405110199127248896>", style=discord.ButtonStyle.primary, row=1, custom_id="room_info")
     async def room_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Інформація про кімнату"""
         user_room = await db.private_rooms.find_one({
@@ -467,6 +466,16 @@ class RoomManagementCommands(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
+        # Видаляємо старі панелі управління (якщо є)
+        async for message in management_channel.history(limit=50):
+            if message.author == interaction.client.user and message.embeds:
+                if message.embeds[0].title == "🏠 Управління приватною кімнатою":
+                    try:
+                        await message.delete()
+                    except:
+                        pass
+                    break
+
         # Зберігаємо конфігурацію
         await db.server_configs.update_one(
             {"guild_id": interaction.guild.id},
@@ -502,7 +511,7 @@ class RoomManagementCommands(commands.Cog):
         )
         embed.set_footer(text="Кнопки працюють постійно")
 
-        view = RoomManagementView(0)  # ID не важливий для постійної панелі
+        view = RoomManagementView()
         
         # Відправляємо панель управління в зазначений канал
         await management_channel.send(embed=embed, view=view)
@@ -531,4 +540,9 @@ class RoomManagementCommands(commands.Cog):
         return user_room
 
 async def setup(bot):
+    # Додаємо persistent view при завантаженні модуля
+    view = RoomManagementView()
+    bot.add_view(view)
+    print("✅ Room Management persistent view зареєстровано")
+    
     await bot.add_cog(RoomManagementCommands(bot))
