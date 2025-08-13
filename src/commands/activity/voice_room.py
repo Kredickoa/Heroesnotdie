@@ -451,11 +451,37 @@ class RoomManagementCommands(commands.Cog):
             {"$set": {"active": False, "deleted_at": discord.utils.utcnow()}}
         )
 
-    @app_commands.command(name="room", description="Управління своєю приватною кімнатою")
-    async def room_management(self, interaction: discord.Interaction):
-        """Основна команда для управління приватною кімнатою"""
-        await interaction.response.defer(ephemeral=False)
+    @app_commands.command(name="room-setup", description="[АДМІН] Налаштування системи приватних кімнат")
+    @app_commands.describe(
+        creator_channel="Voice канал де користувачі створюють свої кімнати",
+        management_channel="Text канал куди відправити панель управління кімнатами"
+    )
+    async def room_setup(self, interaction: discord.Interaction, 
+                        creator_channel: discord.VoiceChannel, 
+                        management_channel: discord.TextChannel):
+        """Налаштування системи приватних кімнат для адмінів"""
+        # Перевіряємо права
+        if not interaction.user.guild_permissions.manage_channels:
+            await interaction.response.send_message("❌ У тебе немає прав для використання цієї команди!", ephemeral=True)
+            return
 
+        await interaction.response.defer(ephemeral=True)
+
+        # Зберігаємо конфігурацію
+        await db.server_configs.update_one(
+            {"guild_id": interaction.guild.id},
+            {
+                "$set": {
+                    "creator_channel_id": creator_channel.id,
+                    "management_channel_id": management_channel.id,
+                    "configured_by": interaction.user.id,
+                    "configured_at": discord.utils.utcnow()
+                }
+            },
+            upsert=True
+        )
+
+        # Створюємо embed та view для панелі управління
         embed = discord.Embed(
             title="🏠 Управління приватною кімнатою",
             color=0x7c7cf0,
@@ -476,52 +502,25 @@ class RoomManagementCommands(commands.Cog):
         )
         embed.set_footer(text="Кнопки працюють постійно")
 
-        view = RoomManagementView(interaction.user.id)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=False)
+        view = RoomManagementView(0)  # ID не важливий для постійної панелі
+        
+        # Відправляємо панель управління в зазначений канал
+        await management_channel.send(embed=embed, view=view)
 
-    @app_commands.command(name="room-setup", description="[АДМІН] Налаштування системи приватних кімнат")
-    @app_commands.describe(
-        creator_channel="Voice канал де користувачі створюють свої кімнати",
-        control_channel="Text канал де користувачі управляють своїми кімнатами"
-    )
-    async def room_setup(self, interaction: discord.Interaction, 
-                        creator_channel: discord.VoiceChannel, 
-                        control_channel: discord.TextChannel):
-        """Налаштування системи приватних кімнат для адмінів"""
-        # Перевіряємо права
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("❌ У тебе немає прав для використання цієї команди!", ephemeral=True)
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        # Зберігаємо конфігурацію
-        await db.server_configs.update_one(
-            {"guild_id": interaction.guild.id},
-            {
-                "$set": {
-                    "creator_channel_id": creator_channel.id,
-                    "control_channel_id": control_channel.id,
-                    "configured_by": interaction.user.id,
-                    "configured_at": discord.utils.utcnow()
-                }
-            },
-            upsert=True
-        )
-
-        embed = discord.Embed(
+        # Підтверджуємо налаштування адміну
+        success_embed = discord.Embed(
             title="✅ Система приватних кімнат налаштована!",
             color=0x00ff00,
             description=(
                 f"**Канал-створювач:** {creator_channel.mention}\n"
-                f"**Канал управління:** {control_channel.mention}\n\n"
+                f"**Канал управління:** {management_channel.mention}\n\n"
                 f"Тепер користувачі можуть:\n"
                 f"• Заходити в {creator_channel.mention} щоб створити приватну кімнату\n"
-                f"• Використовувати `/room` в {control_channel.mention} для управління"
+                f"• Використовувати панель управління в {management_channel.mention} для налаштування своїх кімнат"
             )
         )
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=success_embed, ephemeral=True)
 
     async def get_user_private_channel(self, user_id):
         """Отримати приватний канал користувача з БД"""
