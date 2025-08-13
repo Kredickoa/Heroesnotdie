@@ -289,7 +289,39 @@ class ShopCommand(commands.Cog):
                 
                 # Кнопки покупки (тільки для власника)
                 if self.target_user == self.user:
-                    await self.add_buy_buttons(interaction)
+                    stats = await self.shop_cog.get_user_stats(self.target_user.id, interaction.guild.id)
+                    items = list(SHOP_ITEMS.items())
+                    start_idx = self.current_page * self.items_per_page
+                    end_idx = min(start_idx + self.items_per_page, len(items))
+                    page_items = items[start_idx:end_idx]
+                    
+                    # Додаємо кнопки покупки для кожного предмета
+                    for item_id, item in page_items:
+                        can_afford = stats['pk_balance'] >= item['price']
+                        has_space = len(stats['items']) < (1 + (stats['wins'] // 10))
+                        already_owns = item_id in stats['items']
+                        
+                        if already_owns:
+                            btn_style = discord.ButtonStyle.success
+                            btn_label = f"✅ {item['name']}"
+                            btn_disabled = True
+                        elif can_afford and has_space:
+                            btn_style = discord.ButtonStyle.primary
+                            btn_label = f"🛒 {item['name']} ({item['price']} ПК)"
+                            btn_disabled = False
+                        else:
+                            btn_style = discord.ButtonStyle.danger
+                            btn_label = f"❌ {item['name']} ({item['price']} ПК)"
+                            btn_disabled = True
+                        
+                        buy_btn = discord.ui.Button(
+                            label=btn_label,
+                            style=btn_style,
+                            disabled=btn_disabled,
+                            custom_id=f"buy_{item_id}"
+                        )
+                        buy_btn.callback = self.create_buy_callback(item_id)
+                        self.add_item(buy_btn)
             
             # Кнопка оновлення
             refresh_btn = discord.ui.Button(
@@ -300,44 +332,7 @@ class ShopCommand(commands.Cog):
             refresh_btn.callback = self.refresh
             self.add_item(refresh_btn)
 
-        async def add_buy_buttons(self, interaction):
-            """Додати кнопки покупки для магазину"""
-            stats = await self.shop_cog.get_user_stats(self.target_user.id, interaction.guild.id)
-            items = list(SHOP_ITEMS.items())
-            start_idx = self.current_page * self.items_per_page
-            end_idx = min(start_idx + self.items_per_page, len(items))
-            page_items = items[start_idx:end_idx]
-            
-            # Створюємо select menu для покупки
-            if page_items:
-                options = []
-                for item_id, item in page_items:
-                    can_afford = stats['pk_balance'] >= item['price']
-                    has_space = len(stats['items']) < (1 + (stats['wins'] // 10))
-                    already_owns = item_id in stats['items']
-                    
-                    if already_owns:
-                        emoji = "✅"
-                        description = "Вже куплено"
-                    elif can_afford and has_space:
-                        emoji = "🛒"
-                        description = f"Купити за {item['price']} ПК"
-                    else:
-                        emoji = "❌"
-                        if not can_afford:
-                            description = f"Потрібно {item['price'] - stats['pk_balance']} ПК"
-                        else:
-                            description = "Немає місця в інвентарі"
-                    
-                    options.append(discord.SelectOption(
-                        label=item['name'],
-                        value=item_id,
-                        description=description,
-                        emoji=emoji
-                    ))
-                
-                select = BuyItemSelect(options, self.shop_cog, self.target_user.id)
-                self.add_item(select)
+
 
         def create_buy_callback(self, item_id):
             async def buy_callback(interaction):
@@ -412,36 +407,7 @@ class ShopCommand(commands.Cog):
             await self.update_view(interaction)
             await interaction.response.edit_message(embed=embed, view=self)
 
-    class BuyItemSelect(discord.ui.Select):
-        def __init__(self, options, shop_cog, user_id):
-            super().__init__(placeholder="Оберіть предмет для покупки...", options=options)
-            self.shop_cog = shop_cog
-            self.user_id = user_id
 
-        async def callback(self, interaction: discord.Interaction):
-            item_id = self.values[0]
-            
-            # Перевіряємо чи предмет вже куплений
-            stats = await self.shop_cog.get_user_stats(self.user_id, interaction.guild.id)
-            if item_id in stats.get('items', []):
-                await interaction.response.send_message("❌ Ви вже маєте цей предмет!", ephemeral=True)
-                return
-            
-            success, message = await self.shop_cog.buy_item(
-                self.user_id, 
-                interaction.guild.id, 
-                item_id
-            )
-            
-            if success:
-                # Оновлюємо view
-                view = self.view
-                embed = await view.get_shop_embed(interaction)
-                await view.update_view(interaction)
-                await interaction.response.edit_message(embed=embed, view=view)
-                await interaction.followup.send(message, ephemeral=True)
-            else:
-                await interaction.response.send_message(message, ephemeral=True)
 
     @app_commands.command(name="pidor_shop", description="Переглянути інвентар та магазин предметів")
     @app_commands.describe(user="Чий профіль переглянути (за замовчуванням - свій)")
