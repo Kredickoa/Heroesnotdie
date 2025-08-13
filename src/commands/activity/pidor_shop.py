@@ -32,39 +32,30 @@ class ShopCommand(commands.Cog):
     async def buy_item(self, user_id: int, guild_id: int, item_id: str) -> tuple[bool, str]:
         """Купити предмет"""
         if item_id not in SHOP_ITEMS:
-            return False, "❌ Невідомий предмет!"
+            return False, "Невідомий предмет!"
         
         stats = await self.get_user_stats(user_id, guild_id)
         item = SHOP_ITEMS[item_id]
         
-        # Перевірити баланс
         if stats['pk_balance'] < item['price']:
-            return False, f"❌ Недостатньо ПК! Потрібно {item['price']} ПК, а у вас {stats['pk_balance']} ПК."
+            return False, f"Недостатньо ПК! Потрібно {item['price']} ПК"
         
-        # Перевірити слоти інвентарю
         max_slots = 1 + (stats['wins'] // 10)
         if len(stats['items']) >= max_slots:
-            return False, f"❌ Інвентар заповнений! Доступно слотів: {max_slots}"
+            return False, f"Інвентар заповнений! Слотів: {max_slots}"
         
-        # Перевірити чи вже є цей предмет
         if item_id in stats['items']:
-            return False, f"❌ У вас вже є **{item['name']}**!"
+            return False, f"У вас вже є {item['name']}!"
         
-        # Купити предмет
         new_balance = stats['pk_balance'] - item['price']
         new_items = stats['items'] + [item_id]
         
         await db.duel_stats.update_one(
             {"user_id": str(user_id), "guild_id": guild_id},
-            {
-                "$set": {
-                    "pk_balance": new_balance,
-                    "items": new_items
-                }
-            }
+            {"$set": {"pk_balance": new_balance, "items": new_items}}
         )
         
-        return True, f"✅ Куплено **{item['name']}** за {item['price']} ПК!\n💰 Новий баланс: {new_balance} ПК"
+        return True, f"Куплено {item['name']} за {item['price']} ПК"
 
     class ShopView(discord.ui.View):
         def __init__(self, user, target_user, shop_cog):
@@ -72,361 +63,180 @@ class ShopCommand(commands.Cog):
             self.user = user
             self.target_user = target_user
             self.shop_cog = shop_cog
-            self.current_mode = "inventory"  # inventory або shop
+            self.current_mode = "inventory"
             self.current_page = 0
             self.items_per_page = 5
+            self.selected_item = None
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
-            """Перевіряє чи користувач може використовувати інтерфейс"""
             if interaction.user != self.user:
-                await interaction.response.send_message("❌ Це не твій інтерфейс!", ephemeral=True)
+                await interaction.response.send_message("Це не твій інтерфейс!", ephemeral=True)
                 return False
             return True
 
-        async def get_inventory_embed(self, interaction):
-            """Створити embed для інвентарю"""
-            stats = await self.shop_cog.get_user_stats(self.target_user.id, interaction.guild.id)
+        async def get_inventory_embed(self):
+            """Конфетний ембед для інвентарю"""
+            stats = await self.shop_cog.get_user_stats(self.target_user.id, self.ctx.guild.id)
+            max_slots = 1 + (stats['wins'] // 10)
             
             embed = discord.Embed(
-                title="🎒 ІНВЕНТАР",
-                color=0x7c7cf0
+                title=f"ІНВЕНТАР | {self.target_user.display_name}",
+                color=0xFFD700  # Золотий колір
             )
             
-            embed.set_author(
-                name=f"{self.target_user.display_name}",
-                icon_url=self.target_user.display_avatar.url
+            # Статистика
+            embed.add_field(
+                name="Ресурси",
+                value=(
+                    f"**Баланс:** {stats['pk_balance']} ПК\n"
+                    f"**Слоти:** {len(stats['items']}/{max_slots}\n"
+                    f"**Перемоги:** {stats['wins']} | **Поразки:** {stats['losses']}"
+                ),
+                inline=False
             )
             
-            max_slots = 1 + (stats['wins'] // 10)
-            total_value = sum(SHOP_ITEMS.get(item_id, {}).get('price', 0) for item_id in stats.get('items', []))
-            
-            # Статистика користувача
-            stats_text = (
-                f"💰 **Баланс:** {stats['pk_balance']} ПК\n"
-                f"🎒 **Слотів зайнято:** {len(stats.get('items', []))}/{max_slots}\n"
-                f"💎 **Загальна вартість предметів:** {total_value} ПК\n"
-                f"🏆 **Перемог:** {stats['wins']} • **Поразок:** {stats['losses']}"
-            )
-            embed.add_field(name="📊 Ваші ресурси", value=stats_text, inline=False)
-            
-            if not stats.get('items'):
-                embed.add_field(
-                    name="📦 Ваші предмети",
-                    value=(
-                        "```\n"
-                        "Інвентар порожній\n\n"
-                        "💡 Натисніть кнопку '🛍️ Магазин' щоб\n"
-                        "   придбати предмети для дуелей!\n"
-                        "```"
-                    ),
-                    inline=False
-                )
+            # Предмети
+            items_text = ""
+            if not stats['items']:
+                items_text = "Інвентар порожній"
             else:
-                # Розрахувати пагінацію
                 items = stats['items']
-                total_pages = (len(items) - 1) // self.items_per_page + 1
                 start_idx = self.current_page * self.items_per_page
-                end_idx = min(start_idx + self.items_per_page, len(items))
-                page_items = items[start_idx:end_idx]
-                
-                # Показати предмети на поточній сторінці
-                items_text = "```diff\n"
-                for i, item_id in enumerate(page_items):
-                    item_number = start_idx + i + 1
-                    if item_id in SHOP_ITEMS:
-                        item = SHOP_ITEMS[item_id]
-                        items_text += f"{item_number}. {item['name']} ({item['price']} ПК)\n"
-                        items_text += f"   + {item['buff']}\n"
-                        items_text += f"   - {item['debuff']}\n\n"
-                    else:
-                        items_text += f"{item_number}. Невідомий предмет\n\n"
-                items_text += "```"
-                
-                field_name = f"📦 Ваші предмети"
-                if total_pages > 1:
-                    field_name += f" (Сторінка {self.current_page + 1}/{total_pages})"
-                
-                embed.add_field(name=field_name, value=items_text, inline=False)
+                for i, item_id in enumerate(items[start_idx:start_idx+self.items_per_page], start_idx):
+                    item = SHOP_ITEMS.get(item_id, {})
+                    items_text += f"**{i+1}.** {item.get('name', 'Невідомий предмет')}\n"
             
+            embed.add_field(name="Предмети", value=items_text or "Пусто", inline=False)
+            embed.set_footer(text=f"Сторінка {self.current_page+1}")
             return embed
 
-        async def get_shop_embed(self, interaction):
-            """Створити embed для магазину"""
-            stats = await self.shop_cog.get_user_stats(self.target_user.id, interaction.guild.id)
-            
-            embed = discord.Embed(
-                title="🛍️ МАГАЗИН ПРЕДМЕТІВ",
-                color=0x7c7cf0
-            )
-            
-            embed.set_author(
-                name=f"{self.target_user.display_name}",
-                icon_url=self.target_user.display_avatar.url
-            )
-            
+        async def get_shop_embed(self):
+            """Конфетний ембед для магазину"""
+            stats = await self.shop_cog.get_user_stats(self.target_user.id, self.ctx.guild.id)
             max_slots = 1 + (stats['wins'] // 10)
             
-            # Інформація про баланс та слоти
-            balance_text = (
-                f"💰 **Ваш баланс:** {stats['pk_balance']} ПК\n"
-                f"🎒 **Вільних слотів:** {max_slots - len(stats['items'])}/{max_slots}\n"
-                f"📊 **Всього предметів у магазині:** {len(SHOP_ITEMS)}"
+            embed = discord.Embed(
+                title="МАГАЗИН ПРЕДМЕТІВ",
+                color=0x00FF00  # Зелений колір
             )
-            embed.add_field(name="💳 Ваші ресурси", value=balance_text, inline=False)
             
-            # Показати предмети магазину
+            # Інформація
+            embed.add_field(
+                name="Ресурси",
+                value=(
+                    f"**Баланс:** {stats['pk_balance']} ПК\n"
+                    f"**Вільні слоти:** {max_slots - len(stats['items'])}/{max_slots}"
+                ),
+                inline=False
+            )
+            
+            # Список товарів
             items = list(SHOP_ITEMS.items())
-            total_pages = (len(items) - 1) // self.items_per_page + 1
+            shop_text = ""
             start_idx = self.current_page * self.items_per_page
-            end_idx = min(start_idx + self.items_per_page, len(items))
-            page_items = items[start_idx:end_idx]
+            for i, (item_id, item) in enumerate(items[start_idx:start_idx+self.items_per_page], start_idx):
+                owned = " ✓" if item_id in stats['items'] else ""
+                shop_text += f"**{i+1}.** {item['name']} - {item['price']} ПК{owned}\n"
             
-            shop_text = "```diff\n"
-            for i, (item_id, item) in enumerate(page_items):
-                item_number = start_idx + i + 1
-                
-                # Визначити статус предмета
-                can_afford = stats['pk_balance'] >= item['price']
-                has_space = len(stats['items']) < max_slots
-                already_owns = item_id in stats['items']
-                
-                if already_owns:
-                    status = "✓ КУПЛЕНО"
-                    prefix = "+"
-                elif can_afford and has_space:
-                    status = "ДОСТУПНО"
-                    prefix = "+"
-                else:
-                    status = "НЕДОСТУПНО"
-                    prefix = "-"
-                
-                shop_text += f"{prefix} {item_number}. {item['name']} - {item['price']} ПК [{status}]\n"
-                shop_text += f"     Бафф: {item['buff']}\n"
-                shop_text += f"     Дебафф: {item['debuff']}\n\n"
-            
-            shop_text += "```"
-            
-            field_name = f"🛒 Асортимент"
-            if total_pages > 1:
-                field_name += f" (Сторінка {self.current_page + 1}/{total_pages})"
-            
-            embed.add_field(name=field_name, value=shop_text, inline=False)
-            
+            embed.add_field(name="Асортимент", value=shop_text or "Пусто", inline=False)
+            embed.set_footer(text=f"Сторінка {self.current_page+1}")
             return embed
 
-        async def update_view(self, interaction):
-            """Оновити кнопки інтерфейсу"""
+        async def update_view(self):
+            """Оптимізований інтерфейс кнопок"""
             self.clear_items()
             
-            # Основні кнопки навігації
+            # Навігаційні кнопки
             if self.current_mode == "inventory":
-                # Кнопка переходу в магазин (тільки для власника)
-                if self.target_user == self.user:
-                    shop_btn = discord.ui.Button(
-                        label="🛍️ Магазин",
-                        style=discord.ButtonStyle.primary,
-                        custom_id="switch_to_shop"
-                    )
-                    shop_btn.callback = self.switch_to_shop
-                    self.add_item(shop_btn)
-                
-                # Пагінація для інвентарю
-                stats = await self.shop_cog.get_user_stats(self.target_user.id, interaction.guild.id)
-                items = stats.get('items', [])
+                self.add_item(SwitchButton("🛍️ Магазин", "shop"))
+                items = (await self.shop_cog.get_user_stats(self.target_user.id, self.ctx.guild.id))['items']
                 if items:
-                    total_pages = (len(items) - 1) // self.items_per_page + 1
-                    if total_pages > 1:
-                        if self.current_page > 0:
-                            prev_btn = discord.ui.Button(
-                                emoji="◀️",
-                                style=discord.ButtonStyle.secondary,
-                                custom_id="prev_page"
-                            )
-                            prev_btn.callback = self.previous_page
-                            self.add_item(prev_btn)
-                        
-                        if self.current_page < total_pages - 1:
-                            next_btn = discord.ui.Button(
-                                emoji="▶️",
-                                style=discord.ButtonStyle.secondary,
-                                custom_id="next_page"
-                            )
-                            next_btn.callback = self.next_page
-                            self.add_item(next_btn)
+                    self.add_item(NavButton("◀️", "prev"))
+                    self.add_item(NavButton("▶️", "next"))
+            else:
+                self.add_item(SwitchButton("🎒 Інвентар", "inventory"))
+                self.add_item(NavButton("◀️", "prev"))
+                self.add_item(NavButton("▶️", "next"))
+                self.add_item(SelectMenu(self))
             
-            else:  # shop mode
-                # Кнопка повернення в інвентар
-                inventory_btn = discord.ui.Button(
-                    label="🎒 Інвентар",
-                    style=discord.ButtonStyle.secondary,
-                    custom_id="switch_to_inventory"
-                )
-                inventory_btn.callback = self.switch_to_inventory
-                self.add_item(inventory_btn)
+            self.add_item(ActionButton("🔄", "refresh"))
+
+        @discord.ui.select(
+            placeholder="Оберіть предмет",
+            options=[discord.SelectOption(label=item['name'], value=item_id) 
+                    for item_id, item in SHOP_ITEMS.items()]
+        )
+        async def select_callback(self, interaction, select):
+            self.selected_item = select.values[0]
+            await interaction.response.defer()
+
+        @discord.ui.button(label="Купити", style=discord.ButtonStyle.primary)
+        async def buy_callback(self, interaction, button):
+            if not self.selected_item:
+                await interaction.response.send_message("Оберіть предмет!", ephemeral=True)
+                return
                 
-                # Пагінація для магазину
-                items = list(SHOP_ITEMS.items())
-                total_pages = (len(items) - 1) // self.items_per_page + 1
-                
-                if total_pages > 1:
-                    if self.current_page > 0:
-                        prev_btn = discord.ui.Button(
-                            emoji="◀️",
-                            style=discord.ButtonStyle.secondary,
-                            custom_id="prev_page"
-                        )
-                        prev_btn.callback = self.previous_page
-                        self.add_item(prev_btn)
-                    
-                    if self.current_page < total_pages - 1:
-                        next_btn = discord.ui.Button(
-                            emoji="▶️",
-                            style=discord.ButtonStyle.secondary,
-                            custom_id="next_page"
-                        )
-                        next_btn.callback = self.next_page
-                        self.add_item(next_btn)
-                
-                # Кнопки покупки (тільки для власника)
-                if self.target_user == self.user:
-                    stats = await self.shop_cog.get_user_stats(self.target_user.id, interaction.guild.id)
-                    items = list(SHOP_ITEMS.items())
-                    start_idx = self.current_page * self.items_per_page
-                    end_idx = min(start_idx + self.items_per_page, len(items))
-                    page_items = items[start_idx:end_idx]
-                    
-                    # Додаємо кнопки покупки для кожного предмета
-                    for item_id, item in page_items:
-                        can_afford = stats['pk_balance'] >= item['price']
-                        has_space = len(stats['items']) < (1 + (stats['wins'] // 10))
-                        already_owns = item_id in stats['items']
-                        
-                        if already_owns:
-                            btn_style = discord.ButtonStyle.success
-                            btn_label = f"✅ {item['name']}"
-                            btn_disabled = True
-                        elif can_afford and has_space:
-                            btn_style = discord.ButtonStyle.primary
-                            btn_label = f"🛒 {item['name']} ({item['price']} ПК)"
-                            btn_disabled = False
-                        else:
-                            btn_style = discord.ButtonStyle.danger
-                            btn_label = f"❌ {item['name']} ({item['price']} ПК)"
-                            btn_disabled = True
-                        
-                        buy_btn = discord.ui.Button(
-                            label=btn_label,
-                            style=btn_style,
-                            disabled=btn_disabled,
-                            custom_id=f"buy_{item_id}"
-                        )
-                        buy_btn.callback = self.create_buy_callback(item_id)
-                        self.add_item(buy_btn)
-            
-            # Кнопка оновлення
-            refresh_btn = discord.ui.Button(
-                emoji="🔄",
-                style=discord.ButtonStyle.secondary,
-                custom_id="refresh"
+            success, msg = await self.shop_cog.buy_item(
+                self.target_user.id, 
+                interaction.guild.id, 
+                self.selected_item
             )
-            refresh_btn.callback = self.refresh
-            self.add_item(refresh_btn)
+            await interaction.response.send_message(msg, ephemeral=True)
+            await self.refresh_view()
 
+    class NavButton(discord.ui.Button):
+        def __init__(self, emoji, action):
+            super().__init__(emoji=emoji, style=discord.ButtonStyle.secondary)
+            self.action = action
+        
+        async def callback(self, interaction):
+            view = self.view
+            if self.action == "prev" and view.current_page > 0:
+                view.current_page -= 1
+            elif self.action == "next":
+                view.current_page += 1
+            await view.refresh_view(interaction)
 
+    class SwitchButton(discord.ui.Button):
+        def __init__(self, label, mode):
+            super().__init__(label=label, style=discord.ButtonStyle.primary)
+            self.mode = mode
+        
+        async def callback(self, interaction):
+            view = self.view
+            view.current_mode = self.mode
+            view.current_page = 0
+            await view.refresh_view(interaction)
 
-        def create_buy_callback(self, item_id):
-            async def buy_callback(interaction):
-                success, message = await self.shop_cog.buy_item(
-                    self.target_user.id, 
-                    interaction.guild.id, 
-                    item_id
-                )
-                
-                if success:
-                    embed = await self.get_shop_embed(interaction)
-                    await self.update_view(interaction)
-                    await interaction.response.edit_message(embed=embed, view=self)
-                    await interaction.followup.send(message, ephemeral=True)
-                else:
-                    await interaction.response.send_message(message, ephemeral=True)
-            
-            return buy_callback
+    class ActionButton(discord.ui.Button):
+        def __init__(self, emoji, action):
+            super().__init__(emoji=emoji, style=discord.ButtonStyle.secondary)
+            self.action = action
+        
+        async def callback(self, interaction):
+            await self.view.refresh_view(interaction)
 
-        async def switch_to_shop(self, interaction):
-            """Перемикнути на магазин"""
-            self.current_mode = "shop"
-            self.current_page = 0
-            embed = await self.get_shop_embed(interaction)
-            await self.update_view(interaction)
-            await interaction.response.edit_message(embed=embed, view=self)
+    async def refresh_view(self, interaction):
+        if self.current_mode == "inventory":
+            embed = await self.get_inventory_embed()
+        else:
+            embed = await self.get_shop_embed()
+        await self.update_view()
+        await interaction.response.edit_message(embed=embed, view=self)
 
-        async def switch_to_inventory(self, interaction):
-            """Перемикнути на інвентар"""
-            self.current_mode = "inventory"
-            self.current_page = 0
-            embed = await self.get_inventory_embed(interaction)
-            await self.update_view(interaction)
-            await interaction.response.edit_message(embed=embed, view=self)
-
-        async def previous_page(self, interaction):
-            """Попередня сторінка"""
-            if self.current_page > 0:
-                self.current_page -= 1
-                if self.current_mode == "inventory":
-                    embed = await self.get_inventory_embed(interaction)
-                else:
-                    embed = await self.get_shop_embed(interaction)
-                await self.update_view(interaction)
-                await interaction.response.edit_message(embed=embed, view=self)
-
-        async def next_page(self, interaction):
-            """Наступна сторінка"""
-            if self.current_mode == "inventory":
-                stats = await self.shop_cog.get_user_stats(self.target_user.id, interaction.guild.id)
-                items = stats.get('items', [])
-                total_pages = (len(items) - 1) // self.items_per_page + 1 if items else 1
-            else:
-                items = list(SHOP_ITEMS.items())
-                total_pages = (len(items) - 1) // self.items_per_page + 1
-            
-            if self.current_page < total_pages - 1:
-                self.current_page += 1
-                if self.current_mode == "inventory":
-                    embed = await self.get_inventory_embed(interaction)
-                else:
-                    embed = await self.get_shop_embed(interaction)
-                await self.update_view(interaction)
-                await interaction.response.edit_message(embed=embed, view=self)
-
-        async def refresh(self, interaction):
-            """Оновити поточний режим"""
-            if self.current_mode == "inventory":
-                embed = await self.get_inventory_embed(interaction)
-            else:
-                embed = await self.get_shop_embed(interaction)
-            await self.update_view(interaction)
-            await interaction.response.edit_message(embed=embed, view=self)
-
-
-
-    @app_commands.command(name="pidor_shop", description="Переглянути інвентар та магазин предметів")
-    @app_commands.describe(user="Чий профіль переглянути (за замовчуванням - свій)")
+    @app_commands.command(name="pidor_shop", description="Магазин предметів для дуелей")
     async def pidor_shop_command(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
         await interaction.response.defer()
-        
         target_user = user or interaction.user
         
-        # Перевірити чи це бот
         if target_user.bot:
-            await interaction.followup.send(
-                "🤖 Боти не мають інвентарів. Вони зберігають все в хмарі!",
-                ephemeral=True
-            )
+            await interaction.followup.send("Боти не мають інвентарів", ephemeral=True)
             return
         
         view = self.ShopView(interaction.user, target_user, self)
-        embed = await view.get_inventory_embed(interaction)
-        await view.update_view(interaction)
+        view.ctx = interaction
+        embed = await view.get_inventory_embed()
+        await view.update_view()
         
         await interaction.followup.send(embed=embed, view=view)
 
