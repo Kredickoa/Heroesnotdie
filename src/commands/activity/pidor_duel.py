@@ -94,7 +94,7 @@ class PidorDuelCommand(commands.Cog):
             if random_event["name"] == "DDoS атака":
                 await interaction.edit_original_response(
                     embed=discord.Embed(
-                        title="💥 DDoS АТАКА!",
+                        title="💥 DDoS АТАК!",
                         description="Дуель повторюється через 10 секунд...",
                         color=0xE74C3C
                     )
@@ -119,13 +119,16 @@ class PidorDuelCommand(commands.Cog):
         # Показати початок дуелі
         battle_embed = discord.Embed(
             title="⚔️ ДУЕЛЬ РОЗПОЧАТО!",
-            description=f"🎯 **{first_shooter.mention}** стріляє першим!",
+            description=f"<:dart:1405489296411988040> **{first_shooter.mention}** стріляє першим!",
             color=0xE74C3C
         )
         
+        challenger_rank = self.get_rank_info(challenger_stats['wins'])
+        target_rank = self.get_rank_info(target_stats['wins'])
+        
         battle_embed.add_field(
-            name=f"{self.get_rank_info(challenger_stats['wins'])['emoji']} Челленджер",
-            value=f"**{challenger.display_name}**\nПеремоги: {challenger_stats['wins']}",
+            name=f"{challenger_rank['emoji']} Челленджер",
+            value=f"**{challenger.display_name}**\n<:trophy:1405488585372860517> Перемоги: {challenger_stats['wins']}",
             inline=True
         )
         
@@ -136,8 +139,8 @@ class PidorDuelCommand(commands.Cog):
         )
         
         battle_embed.add_field(
-            name=f"{self.get_rank_info(target_stats['wins'])['emoji']} Опонент",
-            value=f"**{target.display_name}**\nПеремоги: {target_stats['wins']}",
+            name=f"{target_rank['emoji']} Опонент",
+            value=f"**{target.display_name}**\n<:trophy:1405488585372860517> Перемоги: {target_stats['wins']}",
             inline=True
         )
         
@@ -201,9 +204,9 @@ class PidorDuelCommand(commands.Cog):
             if event_effects.get("random_winner"):
                 winner, loser = random.choice([(battle_info["challenger"], battle_info["target"]), 
                                              (battle_info["target"], battle_info["challenger"])])
-                result_text = f"🏛️ **Модератор втрутився!** {winner.mention} переміг!"
+                result_text = f"🛡️ **Модератор втрутився!** {winner.mention} перемiг!"
             else:
-                result_text = f"🎯 **{winner.mention}** влучно стріляє! Переможець визначений!"
+                result_text = f"<:dart:1405489296411988040> **{winner.mention}** влучно стріляв! Переможець визначений!"
             
             await self.finish_duel(interaction, winner, loser, battle_info, result_text)
             
@@ -291,23 +294,27 @@ class PidorDuelCommand(commands.Cog):
         
         result_embed.add_field(
             name="🥇 Переможець",
-            value=f"**{winner.mention}**\n+{pk_gained} ПК\n💰 Баланс: {new_winner_balance} ПК",
+            value=f"**{winner.mention}**\n+{pk_gained} ПК\n<:bank:1405489965244088340> Баланс: {new_winner_balance} ПК",
             inline=True
         )
         
         result_embed.add_field(
             name="💀 Переможений",
-            value=f"**{loser.mention}**\n-{pk_lost} ПК\n💰 Баланс: {new_loser_balance} ПК",
+            value=f"**{loser.mention}**\n-{pk_lost} ПК\n<:bank:1405489965244088340> Баланс: {new_loser_balance} ПК",
             inline=True
         )
         
         meme_comments = [
             "Епічна битва віків!",
             "Це було неочікувано!",
-            "Хтось викликає швидку?", 
+            "Хтось викликає швидку?",
             "Мама, я в телевізорі!",
             "Красиво зіграв!",
-            "Чекай реванш!"
+            "Чекай реванш!",
+            "Це була легка перемога!",
+            "Повний розгром!",
+            "Майже як у кіно!",
+            "Професіонал у дії!"
         ]
         
         result_embed.set_footer(text=random.choice(meme_comments))
@@ -378,19 +385,19 @@ class PidorDuelCommand(commands.Cog):
         
         embed = discord.Embed(
             title="⚔️ ВИКЛИК НА ДУЕЛЬ!",
-            description=f"{challenger.mention} викликає {target.mention} на дуель!",
+            description=f"<:pistol:1405488178978095246> {challenger.mention} викликає {target.mention} на дуель!",
             color=0xE67E22
         )
         
         embed.add_field(
             name=f"{challenger_rank['emoji']} Челленджер",
-            value=f"**{challenger.display_name}**\n{challenger_rank['name']}\nПеремоги: {challenger_stats['wins']}",
+            value=f"**{challenger.display_name}**\n{challenger_rank['name']}\n<:trophy:1405488585372860517> Перемоги: {challenger_stats['wins']}",
             inline=True
         )
         
         embed.add_field(
             name=f"{target_rank['emoji']} Опонент", 
-            value=f"**{target.display_name}**\n{target_rank['name']}\nПеремоги: {target_stats['wins']}",
+            value=f"**{target.display_name}**\n{target_rank['name']}\n<:trophy:1405488585372860517> Перемоги: {target_stats['wins']}",
             inline=True
         )
         

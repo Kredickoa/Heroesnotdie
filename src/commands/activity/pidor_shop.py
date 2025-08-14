@@ -64,7 +64,7 @@ class ShopCommand(commands.Cog):
             }
         )
         
-        return True, f"✅ Куплено **{item['name']}** за {item['price']} ПК!\n💰 Новий баланс: {new_balance} ПК"
+        return True, f"✅ Куплено **{item['name']}** за {item['price']} ПК!\n<:bank:1405489965244088340> Новий баланс: {new_balance} ПК"
 
     class ShopView(discord.ui.View):
         def __init__(self, user, target_user, shop_cog):
@@ -77,7 +77,7 @@ class ShopCommand(commands.Cog):
             self.items_per_page = 5
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
-            """Перевіряє чи користувач може використовувати інтерфейс"""
+            """Перевірює чи користувач може використовувати інтерфейс"""
             if interaction.user != self.user:
                 await interaction.response.send_message("❌ Це не твій інтерфейс!", ephemeral=True)
                 return False
@@ -101,28 +101,30 @@ class ShopCommand(commands.Cog):
             total_value = sum(SHOP_ITEMS.get(item_id, {}).get('price', 0) for item_id in stats.get('items', []))
             
             # Статистика користувача
-            stats_text = (
-                f"💰 **Баланс:** {stats['pk_balance']} ПК\n"
-                f"🎒 **Слотів зайнято:** {len(stats.get('items', []))}/{max_slots}\n"
-                f"💎 **Загальна вартість предметів:** {total_value} ПК\n"
-                f"🏆 **Перемог:** {stats['wins']} • **Поразок:** {stats['losses']}"
-            )
-            embed.add_field(name="📊 Ваші ресурси", value=stats_text, inline=False)
+            stats_text = f"""
+┌─ <:bank:1405489965244088340> **ВАШІ РЕСУРСИ** ─┐
+│ **Баланс:** `{stats['pk_balance']} ПК`
+│ **Слотів зайнято:** `{len(stats.get('items', []))}/{max_slots}`
+│ **Загальна вартість предметів:** `{total_value} ПК`
+│ <:trophy:1405488585372860517> **Перемог:** `{stats['wins']}` • **Поразок:** `{stats['losses']}`
+└─────────────────────────────────┘
+            """
+            embed.add_field(name="　", value=stats_text, inline=False)
             
             if not stats.get('items'):
-                embed.add_field(
-                    name="📦 Ваші предмети",
-                    value=(
-                        "```\n"
-                        "Інвентар порожній\n\n"
-                        "💡 Натисніть кнопку '🛍️ Магазин' щоб\n"
-                        "   придбати предмети для дуелей!\n"
-                        "```"
-                    ),
-                    inline=False
-                )
+                empty_inventory = f"""
+┌─ 📦 **ВАШІ ПРЕДМЕТИ** ─┐
+│
+│ `Інвентар порожній`
+│
+│ 💡 Натисніть кнопку '<:market:1405145855178182736> Магазин' щоб
+│    придбати предмети для дуелей!
+│
+└──────────────────────────┘
+                """
+                embed.add_field(name="　", value=empty_inventory, inline=False)
             else:
-                # Розрахувати пагінацію
+                # Розраховувати пагінацію
                 items = stats['items']
                 total_pages = (len(items) - 1) // self.items_per_page + 1
                 start_idx = self.current_page * self.items_per_page
@@ -130,21 +132,23 @@ class ShopCommand(commands.Cog):
                 page_items = items[start_idx:end_idx]
                 
                 # Показати предмети на поточній сторінці
-                items_text = "```diff\n"
+                items_text = "┌─ 📦 **ВАШІ ПРЕДМЕТИ** ─┐\n"
+                
                 for i, item_id in enumerate(page_items):
                     item_number = start_idx + i + 1
                     if item_id in SHOP_ITEMS:
                         item = SHOP_ITEMS[item_id]
-                        items_text += f"{item_number}. {item['name']} ({item['price']} ПК)\n"
-                        items_text += f"   + {item['buff']}\n"
-                        items_text += f"   - {item['debuff']}\n\n"
+                        items_text += f"│ `{item_number}.` **{item['name']}** `({item['price']} ПК)`\n"
+                        items_text += f"│ ┣━ ✅ {item['buff']}\n"
+                        items_text += f"│ ┗━ ❌ {item['debuff']}\n│\n"
                     else:
-                        items_text += f"{item_number}. Невідомий предмет\n\n"
-                items_text += "```"
+                        items_text += f"│ `{item_number}.` **Невідомий предмет**\n│\n"
                 
-                field_name = f"📦 Ваші предмети"
+                items_text += "└──────────────────────────┘"
+                
+                field_name = "　"
                 if total_pages > 1:
-                    field_name += f" (Сторінка {self.current_page + 1}/{total_pages})"
+                    field_name = f"📄 Сторінка {self.current_page + 1}/{total_pages}"
                 
                 embed.add_field(name=field_name, value=items_text, inline=False)
             
@@ -167,12 +171,14 @@ class ShopCommand(commands.Cog):
             max_slots = 1 + (stats['wins'] // 10)
             
             # Інформація про баланс та слоти
-            balance_text = (
-                f"💰 **Ваш баланс:** {stats['pk_balance']} ПК\n"
-                f"🎒 **Вільних слотів:** {max_slots - len(stats['items'])}/{max_slots}\n"
-                f"📊 **Всього предметів у магазині:** {len(SHOP_ITEMS)}"
-            )
-            embed.add_field(name="💳 Ваші ресурси", value=balance_text, inline=False)
+            balance_text = f"""
+┌─ <:bank:1405489965244088340> **ВАШІ РЕСУРСИ** ─┐
+│ **Ваш баланс:** `{stats['pk_balance']} ПК`
+│ **Вільних слотів:** `{max_slots - len(stats['items'])}/{max_slots}`
+│ **Всього предметів у магазині:** `{len(SHOP_ITEMS)}`
+└─────────────────────────────────────┘
+            """
+            embed.add_field(name="　", value=balance_text, inline=False)
             
             # Показати предмети магазину
             items = list(SHOP_ITEMS.items())
@@ -181,7 +187,8 @@ class ShopCommand(commands.Cog):
             end_idx = min(start_idx + self.items_per_page, len(items))
             page_items = items[start_idx:end_idx]
             
-            shop_text = "```diff\n"
+            shop_text = "┌─ <:market:1405145855178182736> **АСОРТИМЕНТ** ─┐\n"
+            
             for i, (item_id, item) in enumerate(page_items):
                 item_number = start_idx + i + 1
                 
@@ -191,24 +198,24 @@ class ShopCommand(commands.Cog):
                 already_owns = item_id in stats['items']
                 
                 if already_owns:
-                    status = "✓ КУПЛЕНО"
-                    prefix = "+"
+                    status = "✅ КУПЛЕНО"
+                    status_emoji = "✅"
                 elif can_afford and has_space:
-                    status = "ДОСТУПНО"
-                    prefix = "+"
+                    status = "🟢 ДОСТУПНО"
+                    status_emoji = "🛒"
                 else:
-                    status = "НЕДОСТУПНО"
-                    prefix = "-"
+                    status = "🔴 НЕДОСТУПНО"
+                    status_emoji = "❌"
                 
-                shop_text += f"{prefix} {item_number}. {item['name']} - {item['price']} ПК [{status}]\n"
-                shop_text += f"     Бафф: {item['buff']}\n"
-                shop_text += f"     Дебафф: {item['debuff']}\n\n"
+                shop_text += f"│ `{item_number}.` {status_emoji} **{item['name']}** - `{item['price']} ПК` [{status}]\n"
+                shop_text += f"│ ┣━ ✅ {item['buff']}\n"
+                shop_text += f"│ ┗━ ❌ {item['debuff']}\n│\n"
             
-            shop_text += "```"
+            shop_text += "└─────────────────────────────────────────┘"
             
-            field_name = f"🛒 Асортимент"
+            field_name = "　"
             if total_pages > 1:
-                field_name += f" (Сторінка {self.current_page + 1}/{total_pages})"
+                field_name = f"📄 Сторінка {self.current_page + 1}/{total_pages}"
             
             embed.add_field(name=field_name, value=shop_text, inline=False)
             
@@ -223,7 +230,8 @@ class ShopCommand(commands.Cog):
                 # Кнопка переходу в магазин (тільки для власника)
                 if self.target_user == self.user:
                     shop_btn = discord.ui.Button(
-                        label="🛍️ Магазин",
+                        label="Магазин",
+                        emoji="<:market:1405145855178182736>",
                         style=discord.ButtonStyle.primary,
                         custom_id="switch_to_shop"
                     )
@@ -257,7 +265,8 @@ class ShopCommand(commands.Cog):
             else:  # shop mode
                 # Кнопка повернення в інвентар
                 inventory_btn = discord.ui.Button(
-                    label="🎒 Інвентар",
+                    label="Інвентар",
+                    emoji="🎒",
                     style=discord.ButtonStyle.secondary,
                     custom_id="switch_to_inventory"
                 )
@@ -332,8 +341,6 @@ class ShopCommand(commands.Cog):
             refresh_btn.callback = self.refresh
             self.add_item(refresh_btn)
 
-
-
         def create_buy_callback(self, item_id):
             async def buy_callback(interaction):
                 success, message = await self.shop_cog.buy_item(
@@ -406,8 +413,6 @@ class ShopCommand(commands.Cog):
                 embed = await self.get_shop_embed(interaction)
             await self.update_view(interaction)
             await interaction.response.edit_message(embed=embed, view=self)
-
-
 
     @app_commands.command(name="pidor_shop", description="Переглянути інвентар та магазин предметів")
     @app_commands.describe(user="Чий профіль переглянути (за замовчуванням - свій)")

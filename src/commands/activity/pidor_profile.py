@@ -61,20 +61,21 @@ class ProfileCommand(commands.Cog):
         daily_activity = {}
         for i in range(7):
             date = (datetime.utcnow() - timedelta(days=6-i)).date()
-            daily_activity[date] = 0
+            daily_activity[date] = {"total": 0, "wins": 0, "losses": 0}
         
         for duel in duels:
             date = duel['timestamp'].date()
             if date in daily_activity:
+                daily_activity[date]["total"] += 1
                 if duel['winner'] == str(user_id):
-                    daily_activity[date] += 50  # XP за перемогу
+                    daily_activity[date]["wins"] += 1
                 else:
-                    daily_activity[date] += 25  # XP за участь
+                    daily_activity[date]["losses"] += 1
         
-        return [(date, xp) for date, xp in daily_activity.items()]
+        return [(date, data) for date, data in daily_activity.items()]
 
     async def create_activity_chart(self, user_id: int, guild_id: int, username: str) -> io.BytesIO:
-        """Створити графік активності"""
+        """Створити графік активності з лініями перемог/поразок"""
         activity = await self.get_user_activity(user_id, guild_id)
         
         if not activity:
@@ -82,28 +83,39 @@ class ProfileCommand(commands.Cog):
         
         # Налаштування matplotlib
         plt.style.use('dark_background')
-        fig, ax = plt.subplots(figsize=(10, 4), facecolor='#2C2F33')
+        fig, ax = plt.subplots(figsize=(12, 6), facecolor='#2C2F33')
         ax.set_facecolor('#2C2F33')
         
         dates = [item[0] for item in activity]
-        xp_values = [item[1] for item in activity]
+        total_games = [item[1]["total"] for item in activity]
+        wins = [item[1]["wins"] for item in activity]
+        losses = [item[1]["losses"] for item in activity]
         
-        # Створити графік
-        ax.plot(dates, xp_values, color='#7289DA', linewidth=3, marker='o', markersize=8, markerfacecolor='#7289DA')
-        ax.fill_between(dates, xp_values, alpha=0.3, color='#7289DA')
+        # Створити графік з трьома лініями
+        ax.plot(dates, total_games, color='#7289DA', linewidth=3, marker='o', 
+                markersize=8, markerfacecolor='#7289DA', label='Всього ігор')
+        ax.plot(dates, wins, color='#2ECC71', linewidth=2.5, marker='▲', 
+                markersize=6, markerfacecolor='#2ECC71', label='Перемоги')
+        ax.plot(dates, losses, color='#E74C3C', linewidth=2.5, marker='▼', 
+                markersize=6, markerfacecolor='#E74C3C', label='Поразки')
+        
+        # Заливка під графіком
+        ax.fill_between(dates, total_games, alpha=0.2, color='#7289DA')
+        ax.fill_between(dates, wins, alpha=0.3, color='#2ECC71')
+        ax.fill_between(dates, losses, alpha=0.3, color='#E74C3C')
         
         # Налаштування осей
-        ax.set_title(f"Активність (XP за останні 7 днів)", color='#FFFFFF', fontsize=14, fontweight='bold', pad=20)
-        ax.set_xlabel("День тижня", color='#B9BBBE', fontsize=10)
-        ax.set_ylabel("Отримано XP", color='#B9BBBE', fontsize=10)
+        ax.set_title(f"📊 Активність за останні 7 днів", color='#FFFFFF', fontsize=16, fontweight='bold', pad=20)
+        ax.set_xlabel("День тижня", color='#B9BBBE', fontsize=12)
+        ax.set_ylabel("Кількість ігор", color='#B9BBBE', fontsize=12)
         
         # Форматування дат
-        day_names = ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri']
+        day_names = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд']
         ax.set_xticks(dates)
-        ax.set_xticklabels(day_names, color='#B9BBBE')
+        ax.set_xticklabels(day_names, color='#B9BBBE', fontsize=11)
         
         # Налаштування сітки
-        ax.grid(True, alpha=0.3, color='#4F545C')
+        ax.grid(True, alpha=0.3, color='#4F545C', linestyle='--')
         ax.spines['bottom'].set_color('#4F545C')
         ax.spines['top'].set_color('#4F545C')
         ax.spines['right'].set_color('#4F545C')
@@ -111,6 +123,12 @@ class ProfileCommand(commands.Cog):
         
         # Колір тексту
         ax.tick_params(colors='#B9BBBE')
+        
+        # Легенда
+        legend = ax.legend(loc='upper left', frameon=True, facecolor='#2C2F33', edgecolor='#4F545C')
+        legend.get_frame().set_alpha(0.9)
+        for text in legend.get_texts():
+            text.set_color('#B9BBBE')
         
         plt.tight_layout()
         
@@ -147,34 +165,42 @@ class ProfileCommand(commands.Cog):
             win_rate = (stats['wins'] / max(total_battles, 1)) * 100 if total_battles > 0 else 0
             
             profile_info = f"""
-            **Рівень:** 28 | **XP:** 4378 / 5420 (81%)
-            **Voice:** 1809 хв | **Реакцій:** 636 | **Повідомлень:** 1328
-            
-            **Ролі:** Admin, 750 hours, Ukr
+┌─ **ЗАГАЛЬНА СТАТИСТИКА** ─┐
+<:user:1405145855178182736> **Рівень:** 28 │ **XP:** 4378 / 5420 (81%)
+<:calendar:1405490255703969863> **Voice:** 1809 хв │ **Реакцій:** 636 │ **Повідомлень:** 1328
+
+└─ **РОЛІ:** Admin, 750 hours, Ukr ─┘
             """
             
-            embed.add_field(name="📊 Статистика", value=profile_info, inline=False)
+            embed.add_field(name="　", value=profile_info, inline=False)
             
-            # Статистика дуелей
+            # Статистика дуелей (більш компактно)
             duel_info = f"""
-            ```
-            ⚔️ Перемоги: {stats['wins']}
-            💀 Поразки: {stats['losses']}
-            📈 Він-рейт: {win_rate:.1f}%
-            💰 Баланс: {stats['pk_balance']} ПК
-            ```
+┌─ <:pistol:1405488178978095246> **ДУЕЛЬНА СТАТИСТИКА** ─┐
+│ **Перемоги:** `{stats['wins']}`　**Поразки:** `{stats['losses']}`
+│ **Він-рейт:** `{win_rate:.1f}%`　<:bank:1405489965244088340> **Баланс:** `{stats['pk_balance']} ПК`
+│ **Всього боїв:** `{total_battles}`　**Предметів:** `{len(stats.get('items', []))}`
+└────────────────────────────────────┘
             """
             
-            embed.add_field(name="🎯 Дуельна статистика", value=duel_info, inline=True)
+            embed.add_field(name="　", value=duel_info, inline=False)
             
-            # Ранг та опис
+            # Ранг та опис (більш стильно)
+            rank_description = f"""
+**{rank_info['name']}** {rank_info['emoji']}
+*{rank_info['description']}*
+
+**Нагороди:** `+{rank_info['win_reward']} ПК` за перемогу
+**Штраф:** `-{rank_info['loss_penalty']} ПК` за поразку
+            """
+            
             embed.add_field(
-                name=f"🏆 {rank_info['name']}",
-                value=f"*{rank_info['description']}*",
-                inline=True
+                name="🏆 ПОТОЧНИЙ РАНГ",
+                value=rank_description,
+                inline=False
             )
             
-            embed.set_footer(text=f"Участник з: 22 June 2025")
+            embed.set_footer(text=f"Учасник з: 22 June 2025 • ID: {self.target_user.id}")
             embed.set_thumbnail(url=self.target_user.display_avatar.url)
             
             return embed
@@ -197,25 +223,25 @@ class ProfileCommand(commands.Cog):
             win_rate = (stats['wins'] / max(total_battles, 1)) * 100 if total_battles > 0 else 0
             
             general_stats = f"""
-            ```
-            📊 Загальна статистика
-            ⚔️ Всього битв: {total_battles}
-            🏆 Перемоги: {stats['wins']}
-            💀 Поразки: {stats['losses']}
-            📈 Він-рейт: {win_rate:.1f}%
-            💰 Поточний баланс: {stats['pk_balance']} ПК
-            🎒 Предметів: {len(stats.get('items', []))}
-            ```
+┌─ **ОСНОВНІ ПОКАЗНИКИ** ─┐
+│ <:pistol:1405488178978095246> **Всього битв:** `{total_battles}`
+│ <:trophy:1405488585372860517> **Перемоги:** `{stats['wins']}`
+│ **Поразки:** `{stats['losses']}`
+│ <:dart:1405489296411988040> **Він-рейт:** `{win_rate:.1f}%`
+│ <:bank:1405489965244088340> **Поточний баланс:** `{stats['pk_balance']} ПК`
+│ **Предметів:** `{len(stats.get('items', []))}`
+│ **Щоденний ПК:** `{stats.get('daily_pk', 0)}/100`
+└──────────────────────────┘
             """
-            embed.add_field(name="📋 Основні показники", value=general_stats, inline=False)
+            embed.add_field(name="　", value=general_stats, inline=False)
             
             # Статистика за тиждень
             week_stats = await self.get_week_stats(interaction)
-            embed.add_field(name="📅 За останній тиждень", value=week_stats, inline=True)
+            embed.add_field(name="<:calendar:1405490255703969863> **ЗА ОСТАННІЙ ТИЖДЕНЬ**", value=week_stats, inline=True)
             
             # Рейтинг на сервері
             server_rank = await self.get_server_rank(interaction)
-            embed.add_field(name="🏅 Позиція на сервері", value=server_rank, inline=True)
+            embed.add_field(name="<:trophy:1405488585372860517> **ПОЗИЦІЯ НА СЕРВЕРІ**", value=server_rank, inline=True)
             
             embed.set_footer(text="Статистика оновлюється в реальному часі")
             
@@ -239,14 +265,16 @@ class ProfileCommand(commands.Cog):
                 "winner": str(self.target_user.id)
             })
             
+            week_losses = week_duels - week_wins
             week_win_rate = (week_wins / max(week_duels, 1)) * 100 if week_duels > 0 else 0
             
             return f"""
-            ```
-            ⚔️ Битв: {week_duels}
-            🏆 Перемог: {week_wins}
-            📈 Він-рейт: {week_win_rate:.1f}%
-            ```
+```
+Битв: {week_duels}
+Перемог: {week_wins}
+Поразок: {week_losses}
+Він-рейт: {week_win_rate:.1f}%
+```
             """
 
         async def get_server_rank(self, interaction):
@@ -262,19 +290,24 @@ class ProfileCommand(commands.Cog):
             
             total_players = len(all_players)
             
-            return f"""
-            ```
-            🏅 Позиція: {user_rank or 'N/A'} з {total_players}
-            📊 Топ {((user_rank / total_players) * 100):.0f}%
-            ```
-            """ if user_rank else "```\nНе брав участі в дуелях\n```"
+            if user_rank:
+                percentage = ((user_rank / total_players) * 100)
+                return f"""
+```
+Позиція: {user_rank} з {total_players}
+Топ {percentage:.0f}%
+```
+                """
+            else:
+                return "```\nНе брав участі в дуелях\n```"
 
         async def update_view(self, interaction):
             self.clear_items()
             
             # Кнопки навігації
             profile_btn = discord.ui.Button(
-                label="👤 Профіль",
+                label="Профіль",
+                emoji="<:user:1405145855178182736>",
                 style=discord.ButtonStyle.primary if self.current_page == "profile" else discord.ButtonStyle.secondary,
                 disabled=self.current_page == "profile"
             )
@@ -282,7 +315,8 @@ class ProfileCommand(commands.Cog):
             self.add_item(profile_btn)
 
             stats_btn = discord.ui.Button(
-                label="📊 Статистика", 
+                label="Статистика",
+                emoji="📊",
                 style=discord.ButtonStyle.primary if self.current_page == "stats" else discord.ButtonStyle.secondary,
                 disabled=self.current_page == "stats"
             )
