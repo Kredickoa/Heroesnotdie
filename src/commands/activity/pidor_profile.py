@@ -91,12 +91,12 @@ class ProfileCommand(commands.Cog):
         wins = [item[1]["wins"] for item in activity]
         losses = [item[1]["losses"] for item in activity]
         
-        # Створити графік з трьома лініями
+        # Створити графік з трьома лініями (FIXED MARKERS)
         ax.plot(dates, total_games, color='#7289DA', linewidth=3, marker='o', 
                 markersize=8, markerfacecolor='#7289DA', label='Всього ігор')
-        ax.plot(dates, wins, color='#2ECC71', linewidth=2.5, marker='▲', 
+        ax.plot(dates, wins, color='#2ECC71', linewidth=2.5, marker='^', 
                 markersize=6, markerfacecolor='#2ECC71', label='Перемоги')
-        ax.plot(dates, losses, color='#E74C3C', linewidth=2.5, marker='▼', 
+        ax.plot(dates, losses, color='#E74C3C', linewidth=2.5, marker='v', 
                 markersize=6, markerfacecolor='#E74C3C', label='Поразки')
         
         # Заливка під графіком
