@@ -260,7 +260,7 @@ class TicketTypeSelect(discord.ui.Select):
                 title=f"{config['name']}",
                 description=f"**Користувач:** {interaction.user.mention}\n**Створено:** <t:{int(datetime.now().timestamp())}:F>",
                 color=0x2b2d31,
-                timestamp=datetime.now(в)
+                timestamp=datetime.now()
             )
             
             if role_id:
