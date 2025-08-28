@@ -337,7 +337,7 @@ class FAQView(discord.ui.View):
         )
         embed.add_field(
             name="**Як отримати роль на сервері?**",
-            value=f"Уважно ознайомтеся з розділом (🎭 — Ролі в цьому каналі). Якщо ви знайшли підхожу роль або у вас залишилися питання — пишіть [support](https://discord.com/channels/1386300362595504159/1403682856814903368)",
+            value="Уважно ознайомтеся з розділом (🎭 — Ролі в цьому каналі). Якщо ви знайшли підхожу роль або у вас залишилися питання — пишіть [support](https://discord.com/channels/1386300362595504159/1403682856814903368)",
             inline=False
         )
         embed.add_field(
@@ -360,7 +360,7 @@ class FAQView(discord.ui.View):
         )
         embed.add_field(
             name="**Як подати скаргу?**",
-            value=f"Подати її можна в каналі [support](https://discord.com/channels/1386300362595504159/1403682856814903368) за такою формою:\n\n**ID учасника.**\n\n**Порушення.**\n\n**Докази.**",
+            value="Подати її можна в каналі [support](https://discord.com/channels/1386300362595504159/1403682856814903368) за такою формою:\n\n**ID учасника.**\n\n**Порушення.**\n\n**Докази.**",
             inline=False
         )
         embed.add_field(
@@ -370,7 +370,7 @@ class FAQView(discord.ui.View):
         )
         embed.add_field(
             name="**Що робити, якщо ви побачили порушення з боку модераторів?**",
-            value=f"Відкрийте тікет у [support](https://discord.com/channels/1386300362595504159/1403682856814903368) і тегніть роль @C u r a t o r, прикріпивши скриншот із порушенням модератора.",
+            value="Відкрийте тікет у [support](https://discord.com/channels/1386300362595504159/1403682856814903368) і тегніть роль @C u r a t o r, прикріпивши скриншот із порушенням модератора.",
             inline=False
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -383,7 +383,7 @@ class FAQView(discord.ui.View):
         )
         embed.add_field(
             name="**Як отримати власний войс?**",
-            value=f"Якщо у вас є компанія з більш ніж 4 осіб і ви можете підтримувати активність у своєму войсі від 50 годин на тиждень — ви маєте можливість звернутися в [support](https://discord.com/channels/1386300362595504159/1403682856814903368), де вам безкоштовно створять власний войс і кастомну роль.",
+            value="Якщо у вас є компанія з більш ніж 4 осіб і ви можете підтримувати активність у своєму войсі від 50 годин на тиждень — ви маєте можливість звернутися в [support](https://discord.com/channels/1386300362595504159/1403682856814903368), де вам безкоштовно створять власний войс і кастомну роль.",
             inline=False
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -465,4 +465,112 @@ class FinalRulesView(discord.ui.View):
                 "— тимчасовий бан (від 45 днів)\n"
                 "— перманентний бан\n\n"
                 "6.1 Повторні порушення ведуть до посилення покарань.\n"
-                "6.2 Покарання застосовуються на розсуд мод
+                "6.2 Покарання застосовуються на розсуд модерації.\n"
+                "6.3 Адміністрація має право обмежити доступ до каналів за окремі порушення.\n"
+                "6.4 Рішення адміністрації можна оскаржити у спеціальному каналі чи через ЛС модератору."
+            ),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="**7. Заключні положення**",
+            value=(
+                "7.1 Незнання правил не звільняє від відповідальності.\n"
+                "7.2 Адміністрація може змінювати правила у будь-який момент.\n"
+                "7.3 Головна мета сервера — комфортне спілкування. Якщо поведінка заважає іншим, адміністрація має право втрутитися навіть без формального порушення."
+            ),
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+# --- КНОПКИ ДЛЯ ГАЙДІВ ---
+class GuidesButtons(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label='Шаблони дивізій, літаків і флоту', style=discord.ButtonStyle.secondary, custom_id='division_templates_btn')
+    async def division_templates(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="В розробці",
+            description="Цей гайд наразі знаходиться в розробці.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label='Армійські механіки', style=discord.ButtonStyle.secondary, custom_id='army_mechanics_btn')
+    async def army_mechanics(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="В розробці",
+            description="Цей гайд наразі знаходиться в розробці.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label='Авіація', style=discord.ButtonStyle.secondary, custom_id='aviation_btn')
+    async def aviation(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="В розробці",
+            description="Цей гайд наразі знаходиться в розробці.",
+            color=0xff9900
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label='Флот', style=discord.ButtonStyle.primary, custom_id='fleet_guide_btn')
+    async def fleet_guide(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="🚢 Гайд по флоту",
+            description="[Натисніть тут, щоб переглянути гайд по флоту](https://docs.google.com/document/d/1Q6bYRRyOPAebEZj0eBy0r-h9B7ftHTIY/edit)",
+            color=0xc0c0c0
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class RulesSetupCommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        # Додаємо persistent views при ініціалізації
+        try:
+            self.bot.add_view(MainMenuView())
+            self.bot.add_view(ServerInfoButtons())
+            self.bot.add_view(RolesMenuView())
+            self.bot.add_view(ActivityRolesView())
+            self.bot.add_view(FAQView())
+            self.bot.add_view(RulesDetailsView())
+            self.bot.add_view(FinalRulesView())
+            self.bot.add_view(GuidesButtons())
+            print("✅ All persistent views loaded successfully")
+        except Exception as e:
+            print(f"❌ Error loading persistent views: {e}")
+
+    @commands.command(name="рулес")
+    async def setup_rules(self, ctx):
+        # Перевіряємо права адміністратора
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("❌ У вас немає прав для цієї команди!", delete_after=5)
+            return
+
+        # Видаляємо повідомлення з командою
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+
+        embed = discord.Embed(color=0xc0c0c0)
+        embed.add_field(
+            name="```🎀・Ласкаво просимо на сервер!```",
+            value=(
+                "Раді бачити вас на нашому сервері! Щоб швидко влитися та стати активним учасником, "
+                "ознайомтеся з основними розділами сервера за допомогою кнопок нижче. Це допоможе освоїтися, "
+                "уникнути порушень і зробити ваше перебування цікавим.\n\n"
+                "**Бажаємо приємного проведення часу!**"
+            ),
+            inline=False
+        )
+
+        await ctx.send(embed=embed, view=MainMenuView())
+
+
+async def setup(bot):
+    await bot.add_cog(RulesSetupCommands(bot))
