@@ -509,7 +509,6 @@ class RoomManagementCommands(commands.Cog):
                 "<:room_info:1405110199127248896> — інформація про кімнату"
             )
         )
-        embed.set_footer(text="Кнопки працюють постійно")
 
         view = RoomManagementView()
         

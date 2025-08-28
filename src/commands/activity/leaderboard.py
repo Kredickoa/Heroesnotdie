@@ -28,11 +28,15 @@ class LeaderboardCommands(commands.Cog):
             member = interaction.guild.get_member(user_data.get("user_id"))
             name = member.display_name if member else f"User#{user_data.get('user_id')}"
 
+            # Конвертуємо хвилини в години
+            voice_minutes = user_data.get('voice_minutes', 0)
+            voice_hours = round(voice_minutes / 60, 1)
+
             line = (
                 f"{i:>2}. {name:<20} | "
                 f"Lvl: {user_data.get('level', 0):<2} | "
                 f"XP: {user_data.get('xp', 0):<4} | "
-                f"Voice: {user_data.get('voice_minutes', 0)} хв | "
+                f"Voice: {voice_hours} год | "
                 f"Реакцій: {user_data.get('reactions', 0)}"
             )
             leaderboard_lines.append(line)
@@ -43,10 +47,14 @@ class LeaderboardCommands(commands.Cog):
         if not found_author:
             for i, user_data in enumerate(sorted_users, start=1):
                 if user_data.get("user_id") == interaction.user.id:
+                    # Конвертуємо хвилини в години для позиції користувача
+                    voice_minutes = user_data.get('voice_minutes', 0)
+                    voice_hours = round(voice_minutes / 60, 1)
+                    
                     line = (
                         f"\nТи на {i} місці:\n"
                         f"Lvl: {user_data.get('level', 0)} | XP: {user_data.get('xp', 0)} | "
-                        f"Voice: {user_data.get('voice_minutes', 0)} хв | Реакцій: {user_data.get('reactions', 0)}"
+                        f"Voice: {voice_hours} год | Реакцій: {user_data.get('reactions', 0)}"
                     )
                     leaderboard_lines.append(line)
                     break

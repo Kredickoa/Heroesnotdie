@@ -45,6 +45,11 @@ class ProfileCommands(commands.Cog):
             xp = user_data.get("xp", 0)
             xp_needed = get_level_xp(current_level)
             xp_percent = round((xp / xp_needed) * 100) if xp_needed else 0
+            
+            # Конвертуємо хвилини в години
+            voice_minutes = user_data.get("voice_minutes", 0)
+            voice_hours = round(voice_minutes / 60, 1)
+            
             roles = [
                 role.name for role in sorted(target_user.roles, key=lambda r: r.position, reverse=True)
                 if role.name != "@everyone"
@@ -57,7 +62,7 @@ class ProfileCommands(commands.Cog):
 Учасник з: {joined_at}
 
 Рівень: {current_level} | XP: {xp} / {xp_needed} ({xp_percent}%)
-Voice: {user_data.get("voice_minutes", 0)} хв | Реакцій: {user_data.get("reactions", 0)} | Повідомлень: {user_data.get("messages", 0)}
+Voice: {voice_hours} год | Реакцій: {user_data.get("reactions", 0)} | Повідомлень: {user_data.get("messages", 0)}
 
 Ролі: {roles_display}
 ```"""
