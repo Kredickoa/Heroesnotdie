@@ -287,18 +287,18 @@ if guild_config.get("moderator_role_ids"):
             else:
                 view = GeneralTicketButtons(ticket_type, interaction.user.id, channel.id)
             
-            # Відправляємо повідомлення
-            mod_mentions = []
-            if guild_config.get("moderator_role_ids"):
-            for mod_role_id in guild_config["moderator_role_ids"]:
-            mod_role = interaction.guild.get_role(mod_role_id)
-             if mod_role:
+# Відправляємо повідомлення
+mod_mentions = []
+if guild_config.get("moderator_role_ids"):
+    for mod_role_id in guild_config["moderator_role_ids"]:
+        mod_role = interaction.guild.get_role(mod_role_id)
+        if mod_role:
             mod_mentions.append(mod_role.mention)
 
-            mention_text = " ".join(mod_mentions) if mod_mentions else "@Модерація"
-             message = await channel.send(
-            f"{interaction.user.mention} | {mention_text}",
-            )
+mention_text = " ".join(mod_mentions) if mod_mentions else "@Модерація"
+message = await channel.send(
+    f"{interaction.user.mention} | {mention_text}",
+)
             
             # Закріплюємо повідомлення
             try:
