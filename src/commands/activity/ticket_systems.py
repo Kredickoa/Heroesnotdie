@@ -699,7 +699,7 @@ class TicketSystem(commands.Cog):
         print("Persistent views завантажено")
     
    @app_commands.command(name="ticket_setup", description="Налаштування системи тікетів")
-@app_commands.describe(
+    @app_commands.describe(
     action="Дія для виконання",
     channel="Канал для панелі тікетів",
     moderator_role="Роль модераторів",
