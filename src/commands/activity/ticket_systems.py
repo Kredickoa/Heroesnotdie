@@ -69,7 +69,7 @@ async def get_guild_config(guild_id: int):
         # Створюємо конфігурацію за замовчуванням
         default_config = {
             "guild_id": guild_id,
-            "moderator_role_id": None,
+            "moderator_role_ids": [],
             "category_id": None,
             "log_channel_id": None,
             "available_roles": []
@@ -224,17 +224,18 @@ class TicketTypeSelect(discord.ui.Select):
             ),
         }
         
-        # Додаємо права модераторам
-        if guild_config["moderator_role_id"]:
-            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"])
-            if mod_role:
-                overwrites[mod_role] = discord.PermissionOverwrite(
-                    read_messages=True, 
-                    send_messages=True, 
-                    manage_messages=True,
-                    attach_files=True,
-                    embed_links=True
-                )
+         # Додаємо права модераторам
+         if guild_config.get("moderator_role_ids"):
+            for mod_role_id in guild_config["moderator_role_ids"]:
+              mod_role = interaction.guild.get_role(mod_role_id)
+              if mod_role:
+                 overwrites[mod_role] = discord.PermissionOverwrite(
+                read_messages=True, 
+                send_messages=True, 
+                manage_messages=True,
+                attach_files=True,
+                embed_links=True
+            )
         
         try:
             channel = await category.create_text_channel(
@@ -287,11 +288,16 @@ class TicketTypeSelect(discord.ui.Select):
                 view = GeneralTicketButtons(ticket_type, interaction.user.id, channel.id)
             
             # Відправляємо повідомлення
-            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"]) if guild_config["moderator_role_id"] else None
-            message = await channel.send(
-                f"{interaction.user.mention} | {mod_role.mention if mod_role else '@Модерація'}",
-                embed=embed,
-                view=view
+            mod_mentions = []
+            if guild_config.get("moderator_role_ids"):
+            for mod_role_id in guild_config["moderator_role_ids"]:
+            mod_role = interaction.guild.get_role(mod_role_id)
+             if mod_role:
+            mod_mentions.append(mod_role.mention)
+
+            mention_text = " ".join(mod_mentions) if mod_mentions else "@Модерація"
+             message = await channel.send(
+            f"{interaction.user.mention} | {mention_text}",
             )
             
             # Закріплюємо повідомлення
@@ -493,7 +499,7 @@ class TicketCloseView(discord.ui.View):
         guild_config = await get_guild_config(interaction.guild.id)
         
         # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+        if not await check_moderator_permissions(interaction.user, guild_config):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
@@ -702,7 +708,7 @@ class TicketSystem(commands.Cog):
     @app_commands.describe(
         action="Дія для виконання",
         channel="Канал для панелі тікетів",
-        moderator_role="Роль модераторів",
+        moderator_roles="Ролі модераторів (через кому або пробіл)",
         log_channel="Канал для логів тікетів",
         category="Категорія для тікетів"
     )
@@ -715,7 +721,7 @@ class TicketSystem(commands.Cog):
         interaction: discord.Interaction,
         action: str,
         channel: discord.TextChannel = None,
-        moderator_role: discord.Role = None,
+        moderator_roles: str = None,
         log_channel: discord.TextChannel = None,
         category: discord.CategoryChannel = None
     ):
@@ -736,9 +742,32 @@ class TicketSystem(commands.Cog):
             updates = {}
             config_messages = []
             
-            if moderator_role:
-                updates["moderator_role_id"] = moderator_role.id
-                config_messages.append(f"Роль модераторів: {moderator_role.mention}")
+           if moderator_roles:
+    # Парсимо ролі з рядка
+    role_mentions = moderator_roles.replace(',', ' ').split()
+    moderator_role_ids = []
+    moderator_role_names = []
+    
+    for role_mention in role_mentions:
+        # Видаляємо <@&> з mention або шукаємо за назвою
+        role_id = None
+        if role_mention.startswith('<@&') and role_mention.endswith('>'):
+            role_id = int(role_mention[3:-1])
+        else:
+            # Шукаємо роль за назвою
+            role = discord.utils.get(interaction.guild.roles, name=role_mention.strip())
+            if role:
+                role_id = role.id
+        
+        if role_id:
+            role = interaction.guild.get_role(role_id)
+            if role:
+                moderator_role_ids.append(role_id)
+                moderator_role_names.append(role.mention)
+    
+    if moderator_role_ids:
+        updates["moderator_role_ids"] = moderator_role_ids
+        config_messages.append(f"Ролі модераторів: {', '.join(moderator_role_names)}")
             
             if log_channel:
                 updates["log_channel_id"] = log_channel.id
@@ -844,16 +873,23 @@ class TicketSystem(commands.Cog):
                 timestamp=datetime.now()
             )
             
-            # Модераторська роль
-            if guild_config["moderator_role_id"]:
-                mod_role = interaction.guild.get_role(guild_config["moderator_role_id"])
-                embed.add_field(
-                    name="Роль модераторів",
-                    value=mod_role.mention if mod_role else f"Роль видалена (ID: {guild_config['moderator_role_id']})",
-                    inline=True
-                )
-            else:
-                embed.add_field(name="Роль модераторів", value="Не налаштовано", inline=True)
+# Модераторські ролі
+if guild_config.get("moderator_role_ids"):
+    mod_roles_text = []
+    for role_id in guild_config["moderator_role_ids"]:
+        mod_role = interaction.guild.get_role(role_id)
+        if mod_role:
+            mod_roles_text.append(mod_role.mention)
+        else:
+            mod_roles_text.append(f"Видалена роль (ID: {role_id})")
+    
+    embed.add_field(
+        name=f"Ролі модераторів ({len(guild_config['moderator_role_ids'])})",
+        value="\n".join(mod_roles_text) if mod_roles_text else "Всі ролі видалені",
+        inline=True
+    )
+else:
+    embed.add_field(name="Ролі модераторів", value="Не налаштовано", inline=True)
             
             # Канал логів
             if guild_config["log_channel_id"]:
@@ -1064,7 +1100,7 @@ class RoleApplicationButtons(discord.ui.View):
         guild_config = await get_guild_config(interaction.guild.id)
         
         # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+        if not await check_moderator_permissions(interaction.user, guild_config):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
@@ -1141,7 +1177,7 @@ class RoleApplicationButtons(discord.ui.View):
         guild_config = await get_guild_config(interaction.guild.id)
         
         # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+        if not await check_moderator_permissions(interaction.user, guild_config):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
@@ -1168,7 +1204,7 @@ class GeneralTicketButtons(discord.ui.View):
         guild_config = await get_guild_config(interaction.guild.id)
         
         # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+        if not await check_moderator_permissions(interaction.user, guild_config):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
@@ -1301,7 +1337,7 @@ async def setup(bot):
         guild_config = await get_guild_config(interaction.guild.id)
         
         # Перевіряємо права
-        if not guild_config["moderator_role_id"] or not any(role.id == guild_config["moderator_role_id"] for role in interaction.user.roles):
+        if not await check_moderator_permissions(interaction.user, guild_config):
             await interaction.response.send_message("Недостатньо прав!", ephemeral=True)
             return
         
