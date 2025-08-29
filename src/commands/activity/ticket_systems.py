@@ -592,11 +592,15 @@ class MultiRoleSelect(discord.ui.Select):
         
         placeholder = "Оберіть ролі для додавання..." if mode == "add" else "Оберіть ролі для видалення..."
         
+        # ВИПРАВЛЕНО: збільшено max_values для вибору кількох ролей
+        max_vals = min(len(options), 25) if options[0].value != "no_roles" else 1
+        min_vals = 1
+        
         super().__init__(
             placeholder=placeholder,
             options=options[:25],  # Discord limit
-            min_values=1,
-            max_values=min(len(options), 25),
+            min_values=min_vals,
+            max_values=max_vals,  # Дозволяємо вибирати кілька ролей
             custom_id=f"multi_role_select_{mode}"
         )
     
@@ -694,115 +698,217 @@ class TicketSystem(commands.Cog):
         self.bot.add_view(TicketCloseView())
         print("Persistent views завантажено")
     
-    @app_commands.command(name="ticket_setup", description="Налаштування системи тікетів")
-    @app_commands.describe(
-        action="Дія для виконання",
-        channel="Канал для панелі тікетів",
-        moderator_role="Роль модераторів",
-        log_channel="Канал для логів тікетів",
-        category="Категорія для тікетів"
-    )
-    @app_commands.choices(action=[
-        app_commands.Choice(name="Створити панель", value="create_panel"),
-        app_commands.Choice(name="Налаштувати конфігурацію", value="configure"),
-        app_commands.Choice(name="Показати поточні налаштування", value="show_config")
-    ])
-    async def ticket_setup(
-        self, 
-        interaction: discord.Interaction,
-        action: str,
-        channel: discord.TextChannel = None,
-        moderator_role: discord.Role = None,
-        log_channel: discord.TextChannel = None,
-        category: discord.CategoryChannel = None
-    ):
-        """Універсальна команда для налаштування системи тікетів"""
+   @app_commands.command(name="ticket_setup", description="Налаштування системи тікетів")
+@app_commands.describe(
+    action="Дія для виконання",
+    channel="Канал для панелі тікетів",
+    moderator_role="Роль модераторів",
+    log_channel="Канал для логів тікетів",
+    category="Категорія для тікетів"
+)
+@app_commands.choices(action=[
+    app_commands.Choice(name="Створити панель та налаштувати", value="setup_all"),
+    app_commands.Choice(name="Показати поточні налаштування", value="show_config")
+])
+async def ticket_setup(
+    self, 
+    interaction: discord.Interaction,
+    action: str,
+    channel: discord.TextChannel = None,
+    moderator_role: discord.Role = None,
+    log_channel: discord.TextChannel = None,
+    category: discord.CategoryChannel = None
+):
+    """Універсальна команда для налаштування системи тікетів"""
+    
+    # Перевіряємо права
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+        return
+    
+    guild_config = await get_guild_config(interaction.guild.id)
+    
+    if action == "setup_all":
+        # Встановлюємо канал для панелі (поточний канал якщо не вказано)
+        target_channel = channel or interaction.channel
         
-        # Перевіряємо права
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
-            return
+        # Оновлюємо конфігурацію
+        updates = {}
+        config_messages = []
         
-        guild_config = await get_guild_config(interaction.guild.id)
+        if moderator_role:
+            updates["moderator_role_id"] = moderator_role.id
+            config_messages.append(f"Роль модераторів: {moderator_role.mention}")
         
-        if action == "create_panel":
-            target_channel = channel or interaction.channel
-            
-            # Головний embed
-            main_embed = discord.Embed(
-                title="Система тікетів підтримки",
-                color=0x2b2d31,
-                timestamp=datetime.now()
-            )
-            
-            # Додаємо інформацію про типи тікетів
-            ticket_info = ""
-            for i, (ticket_type, config) in enumerate(TICKET_TYPES.items(), 1):
-                ticket_info += f"{i}. {config['name']} | {config['description']}\n"
-            
-            main_embed.add_field(
-                name="Доступні типи тікетів:",
-                value=ticket_info.strip(),
+        if log_channel:
+            updates["log_channel_id"] = log_channel.id
+            config_messages.append(f"Канал логів: {log_channel.mention}")
+        
+        if category:
+            updates["category_id"] = category.id
+            config_messages.append(f"Категорія тікетів: {category.name}")
+        
+        # Зберігаємо оновлення конфігурації
+        if updates:
+            await update_guild_config(interaction.guild.id, updates)
+        
+        # Створюємо головний embed для панелі
+        main_embed = discord.Embed(
+            title="Система тікетів підтримки",
+            color=0x2b2d31,
+            timestamp=datetime.now()
+        )
+        
+        # Додаємо інформацію про типи тікетів
+        ticket_info = ""
+        for i, (ticket_type, config) in enumerate(TICKET_TYPES.items(), 1):
+            ticket_info += f"{i}. {config['name']} | {config['description']}\n"
+        
+        main_embed.add_field(
+            name="Доступні типи тікетів:",
+            value=ticket_info.strip(),
+            inline=False
+        )
+        
+        main_embed.add_field(
+            name="Правила використання:",
+            value="• Один активний тікет кожного типу на користувача\n" +
+                  "• Відповідайте чесно та детально\n" +
+                  "• Будьте ввічливими з модерацією\n" +
+                  "• Не створюйте тікети без потреби",
+            inline=False
+        )
+        
+        main_embed.set_footer(text="Виберіть опцію з меню нижче")
+        
+        view = TicketMainView()
+        
+        # Відправляємо панель у вказаний канал
+        panel_message = await target_channel.send(embed=main_embed, view=view)
+        
+        # Створюємо embed з результатами налаштування
+        result_embed = discord.Embed(
+            title="Систему тікетів налаштовано",
+            description=f"**Панель створено у:** {target_channel.mention}\n" +
+                       f"**Посилання на панель:** [Перейти до панелі]({panel_message.jump_url})",
+            color=0x57f287,
+            timestamp=datetime.now()
+        )
+        
+        if config_messages:
+            result_embed.add_field(
+                name="Налаштування конфігурації:",
+                value="\n".join(config_messages),
                 inline=False
             )
-            
-            main_embed.add_field(
-                name="Правила використання:",
-                value="• Один активний тікет кожного типу на користувача\n" +
-                      "• Відповідайте чесно та детально\n" +
-                      "• Будьте ввічливими з модерацією\n" +
-                      "• Не створюйте тікети без потреби",
+        else:
+            result_embed.add_field(
+                name="Конфігурація:",
+                value="Використовуються поточні налаштування\n" +
+                     "Для зміни запустіть команду знову з параметрами",
                 inline=False
             )
-            
-            main_embed.set_footer(text="Виберіть опцію з меню нижче")
-            
-            view = TicketMainView()
-            
-            # Відправляємо повідомлення
-            await target_channel.send(embed=main_embed, view=view)
-            
-            success_embed = discord.Embed(
-                title="Панель тікетів створено",
-                description=f"Панель успішно розміщено в {target_channel.mention}\n\n" +
-                           f"Користувачі тепер можуть створювати тікети\n" +
-                           f"Переконайтесь що ID модераторської ролі вказано правильно",
-                color=0x57f287
-            )
-            
-            await interaction.response.send_message(embed=success_embed, ephemeral=True)
         
-        elif action == "configure":
-            changes_made = []
-            updates = {}
+        # Показуємо поточну конфігурацію
+        current_config = []
+        if guild_config["moderator_role_id"]:
+            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"])
+            current_config.append(f"• Роль модераторів: {mod_role.mention if mod_role else 'Роль видалена'}")
+        
+        if guild_config["log_channel_id"]:
+            log_ch = interaction.guild.get_channel(guild_config["log_channel_id"])
+            current_config.append(f"• Канал логів: {log_ch.mention if log_ch else 'Канал видалений'}")
+        
+        if guild_config["category_id"]:
+            cat = interaction.guild.get_channel(guild_config["category_id"])
+            current_config.append(f"• Категорія: {cat.name if cat else 'Категорія видалена'}")
+        
+        available_roles_count = len(guild_config.get("available_roles", []))
+        current_config.append(f"• Доступних ролей для заявок: {available_roles_count}")
+        
+        if current_config:
+            result_embed.add_field(
+                name="Поточна конфігурація:",
+                value="\n".join(current_config),
+                inline=False
+            )
+        
+        result_embed.set_footer(text="Систему готово до використання")
+        
+        await interaction.response.send_message(embed=result_embed, ephemeral=True)
+    
+    elif action == "show_config":
+        embed = discord.Embed(
+            title="Поточна конфігурація системи тікетів",
+            color=0x2b2d31,
+            timestamp=datetime.now()
+        )
+        
+        # Модераторська роль
+        if guild_config["moderator_role_id"]:
+            mod_role = interaction.guild.get_role(guild_config["moderator_role_id"])
+            embed.add_field(
+                name="Роль модераторів",
+                value=mod_role.mention if mod_role else f"Роль видалена (ID: {guild_config['moderator_role_id']})",
+                inline=True
+            )
+        else:
+            embed.add_field(name="Роль модераторів", value="Не налаштовано", inline=True)
+        
+        # Канал логів
+        if guild_config["log_channel_id"]:
+            log_channel = interaction.guild.get_channel(guild_config["log_channel_id"])
+            embed.add_field(
+                name="Канал логів",
+                value=log_channel.mention if log_channel else f"Канал видалено (ID: {guild_config['log_channel_id']})",
+                inline=True
+            )
+        else:
+            embed.add_field(name="Канал логів", value="Не налаштовано", inline=True)
+        
+        # Категорія тікетів
+        if guild_config["category_id"]:
+            category = interaction.guild.get_channel(guild_config["category_id"])
+            embed.add_field(
+                name="Категорія тікетів",
+                value=category.name if category else f"Категорія видалена (ID: {guild_config['category_id']})",
+                inline=True
+            )
+        else:
+            embed.add_field(name="Категорія тікетів", value="Не налаштовано", inline=True)
+        
+        # Доступні ролі
+        available_roles = guild_config.get("available_roles", [])
+        if available_roles:
+            roles_list = []
+            valid_roles = []
+            for role_id in available_roles:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    roles_list.append(role.mention)
+                    valid_roles.append(role_id)
+                else:
+                    roles_list.append(f"Видалена роль (ID: {role_id})")
             
-            if moderator_role:
-                updates["moderator_role_id"] = moderator_role.id
-                changes_made.append(f"Роль модераторів: {moderator_role.mention}")
+            # Очищуємо неіснуючі ролі
+            if len(valid_roles) != len(available_roles):
+                await update_guild_config(interaction.guild.id, {"available_roles": valid_roles})
             
-            if log_channel:
-                updates["log_channel_id"] = log_channel.id
-                changes_made.append(f"Канал логів: {log_channel.mention}")
-            
-            if category:
-                updates["category_id"] = category.id
-                changes_made.append(f"Категорія тікетів: {category.name}")
-            
-            if updates:
-                await update_guild_config(interaction.guild.id, updates)
-                embed = discord.Embed(
-                    title="Конфігурацію оновлено",
-                    description="**Змінено наступні налаштування:**\n\n" + "\n".join(changes_made),
-                    color=0x57f287
-                )
-            else:
-                embed = discord.Embed(
-                    title="Нічого не змінено",
-                    description="Вкажіть параметри для зміни",
-                    color=0xfee75c
-                )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed.add_field(
+                name=f"Доступні ролі для заявок ({len(valid_roles)})",
+                value="\n".join(roles_list) if roles_list else "Немає ролей",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="Доступні ролі для заявок",
+                value="Не налаштовано",
+                inline=False
+            )
+        
+        embed.set_footer(text=f"ID сервера: {interaction.guild.id}")
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class ConfirmCloseView(discord.ui.View):
     def __init__(self):
