@@ -698,13 +698,13 @@ class TicketSystem(commands.Cog):
         self.bot.add_view(TicketCloseView())
         print("Persistent views завантажено")
     
-   @app_commands.command(name="ticket_setup", description="Налаштування системи тікетів")
+@app_commands.command(name="ticket_setup", description="Налаштування системи тікетів")
     @app_commands.describe(
-    action="Дія для виконання",
-    channel="Канал для панелі тікетів",
-    moderator_role="Роль модераторів",
-    log_channel="Канал для логів тікетів",
-    category="Категорія для тікетів"
+        action="Дія для виконання",
+        channel="Канал для панелі тікетів",
+        moderator_role="Роль модераторів",
+        log_channel="Канал для логів тікетів",
+        category="Категорія для тікетів"
 )
 @app_commands.choices(action=[
     app_commands.Choice(name="Створити панель та налаштувати", value="setup_all"),
