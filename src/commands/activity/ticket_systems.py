@@ -224,12 +224,12 @@ class TicketTypeSelect(discord.ui.Select):
             ),
         }
         
-         # Додаємо права модераторам
-            if guild_config.get("moderator_role_ids"):
-            for mod_role_id in guild_config["moderator_role_ids"]:
-            mod_role = interaction.guild.get_role(mod_role_id)
-            if mod_role:
-                 overwrites[mod_role] = discord.PermissionOverwrite(
+# Додаємо права модераторам
+if guild_config.get("moderator_role_ids"):
+    for mod_role_id in guild_config["moderator_role_ids"]:
+        mod_role = interaction.guild.get_role(mod_role_id)
+        if mod_role:
+            overwrites[mod_role] = discord.PermissionOverwrite(
                 read_messages=True, 
                 send_messages=True, 
                 manage_messages=True,
