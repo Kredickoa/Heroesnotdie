@@ -11,7 +11,7 @@ class RulesView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label='Правила серверу', style=discord.ButtonStyle.secondary, emoji='📜')
+    @discord.ui.button(label='Правила серверу', style=discord.ButtonStyle.secondary, emoji='📜', custom_id='server_rules')
     async def server_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(
             title="📜・Правила серверу Heroes not die:",
@@ -90,7 +90,7 @@ class RulesView(discord.ui.View):
         
         await interaction.response.send_message(embeds=[embed, embed2, embed3], ephemeral=True)
 
-    @discord.ui.button(label='Ролі', style=discord.ButtonStyle.secondary, emoji='🎭')
+    @discord.ui.button(label='Ролі', style=discord.ButtonStyle.secondary, emoji='🎭', custom_id='roles_info')
     async def roles_info(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed1 = discord.Embed(
             title="🛡️・Персонал:",
@@ -146,7 +146,7 @@ class RulesView(discord.ui.View):
         
         await interaction.response.send_message(embeds=[embed1, embed2, embed3], ephemeral=True)
 
-    @discord.ui.button(label='FAQ', style=discord.ButtonStyle.secondary, emoji='❓')
+    @discord.ui.button(label='FAQ', style=discord.ButtonStyle.secondary, emoji='❓', custom_id='faq')
     async def faq(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(
             title="FAQ - Часті запитання:",
@@ -192,9 +192,32 @@ ID учасника.
         
         await interaction.response.send_message(embed=embed, view=support_view, ephemeral=True)
 
+    @discord.ui.button(label='Ігрова категорія', style=discord.ButtonStyle.secondary, emoji='🎮', custom_id='gaming_category')
+    async def gaming_category(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(
+            title="🎮・Ігрова категорія:",
+            description="Ігрова категорія містить правила щодо ігор котрі є на сервері, гайди до ігор, тощо. (адмін знову не придумав, тєрпітє хохлі)",
+            color=0x36393F
+        )
+        
+        # Add game rules document button
+        game_rules_view = discord.ui.View(timeout=None)
+        game_rules_view.add_item(discord.ui.Button(
+            label='Правила',
+            url='https://docs.google.com/document/d/1LQ9tpaG0uU2KXThB7Z95pTCUK0LFwjNKhA3Q9BUj4oI/edit?usp=sharing',
+            emoji='📋',
+            style=discord.ButtonStyle.link
+        ))
+        
+        await interaction.response.send_message(embed=embed, view=game_rules_view, ephemeral=True)
+
 class RulesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def cog_load(self):
+        # Register the persistent view when the cog loads
+        self.bot.add_view(RulesView())
 
     @commands.command(name='рулес')
     async def rules_command(self, ctx):
@@ -207,17 +230,35 @@ class RulesCog(commands.Cog):
         
         embed.add_field(
             name="🎀・Ласкаво просимо на сервер!",
-            value="• Раді бачити вас на нашому сервері! Щоб швидко влитися та стати активним учасником, вивчіть основні розділи сервера за допомогою кнопок нижче. Це допоможе освоїтися, уникнути порушень та зробити ваше перебування захоплюючим.\n\n— Бажаємо приємного проводження часу!",
+            value="""```
+Раді бачити вас на нашому сервері! Щоб швидко влитися та стати активним учасником, ознайомтеся з основними розділами сервера за допомогою кнопок нижче. Це допоможе освоїтися, уникнути порушень і зробити ваше перебування цікавим.
+Бажаємо приємного проведення часу!
+```""",
             inline=False
         )
         
         embed.add_field(
-            name="📋・Інформація по серверу:",
-            value="🔴— Правила сервера\nОзнайомтеся, щоб підтримувати дружелюбну атмосферу.\n\n🎭— Ролі\nДізнайтеся, які ролі доступні та як їх отримати.\n\n⚙️— Ролі по натисканню\nАвтоматична видача корисних ролей для взаємодії з сервером.\n\n❓— ЧаПи\nВідповіді на часто задавані запитання та не тільки.",
+            name="📋・Інформація про сервер:",
+            value="""```
+— Правила сервера
+Ознайомтеся з ними, щоб підтримувати дружню атмосферу.
+
+— Ролі
+Дізнайтеся, які ролі доступні та як їх отримати.
+
+— Ролі за натисканням
+Автоматична видача корисних ролей для взаємодії із сервером.
+
+— ЧаПи
+Відповіді на часті запитання та не тільки.
+
+— Ігрова категорія
+Правила ігор на сервері, гайди, тощо. (адмін не додумав шо тут напісять ще)
+```""",
             inline=False
         )
         
-        # Create the main view with 3 buttons
+        # Create the main view with 4 buttons
         view = RulesView()
         
         await ctx.send(embed=embed, view=view)
