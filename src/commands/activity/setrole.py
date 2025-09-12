@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, time
 from typing import List, Optional
 from modules.db import get_database
 import asyncio
-import math
 
 db = get_database()
 
@@ -19,162 +18,33 @@ class RoleSelectView(discord.ui.View):
         super().__init__(timeout=300)
         self.guild = guild
         self.selected_roles: List[discord.Role] = []
-        self.current_page = 0
-        self.roles_per_page = 25
-        
-        # Фільтруємо всі доступні ролі
-        self.available_roles = [
-            role for role in self.guild.roles 
-            if role != self.guild.default_role 
-            and not role.managed 
-            and role.position < self.guild.me.top_role.position
-        ]
-        
-        self.total_pages = math.ceil(len(self.available_roles) / self.roles_per_page)
         self.update_select()
-
-    def get_page_roles(self):
-        start = self.current_page * self.roles_per_page
-        end = start + self.roles_per_page
-        return self.available_roles[start:end]
 
     def update_select(self):
         # Очищуємо всі елементи
         self.clear_items()
         
-        page_roles = self.get_page_roles()
+        # Фільтруємо ролі (не @everyone, не боти, не вищі за бота)
+        available_roles = [
+            role for role in self.guild.roles 
+            if role != self.guild.default_role 
+            and not role.managed 
+            and role.position < self.guild.me.top_role.position
+        ][:25]  # Discord limit
         
-        if page_roles:
-            select = RoleSelect(page_roles, self.selected_roles)
+        if available_roles:
+            select = RoleSelect(available_roles, self.selected_roles)
             self.add_item(select)
-        
-        # Кнопки навігації по сторінках
-        if self.total_pages > 1:
-            prev_btn = discord.ui.Button(
-                label="◀ Попередня",
-                style=discord.ButtonStyle.secondary,
-                disabled=self.current_page == 0,
-                row=1
-            )
-            prev_btn.callback = self.previous_page
-            self.add_item(prev_btn)
-            
-            page_info_btn = discord.ui.Button(
-                label=f"Сторінка {self.current_page + 1}/{self.total_pages}",
-                style=discord.ButtonStyle.secondary,
-                disabled=True,
-                row=1
-            )
-            self.add_item(page_info_btn)
-            
-            next_btn = discord.ui.Button(
-                label="Наступна ▶",
-                style=discord.ButtonStyle.secondary,
-                disabled=self.current_page >= self.total_pages - 1,
-                row=1
-            )
-            next_btn.callback = self.next_page
-            self.add_item(next_btn)
-        
-        # Кнопка вибрати всі ролі на поточній сторінці
-        if page_roles:
-            select_all_btn = discord.ui.Button(
-                label=f"Вибрати всі на сторінці ({len(page_roles)})",
-                style=discord.ButtonStyle.primary,
-                emoji="☑️",
-                row=2
-            )
-            select_all_btn.callback = self.select_all_on_page
-            self.add_item(select_all_btn)
-        
-        # Кнопка очистити всі обрані ролі
-        if self.selected_roles:
-            clear_all_btn = discord.ui.Button(
-                label=f"Очистити всі ({len(self.selected_roles)})",
-                style=discord.ButtonStyle.danger,
-                emoji="🗑️",
-                row=2
-            )
-            clear_all_btn.callback = self.clear_all
-            self.add_item(clear_all_btn)
         
         # Кнопка продовження
         if self.selected_roles:
             continue_btn = discord.ui.Button(
                 label=f"Продовжити з {len(self.selected_roles)} роллю/ями",
                 style=discord.ButtonStyle.green,
-                emoji="✅",
-                row=3
+                emoji="✅"
             )
             continue_btn.callback = self.continue_setup
             self.add_item(continue_btn)
-
-    async def previous_page(self, interaction: discord.Interaction):
-        if self.current_page > 0:
-            self.current_page -= 1
-            self.update_select()
-            
-            embed = discord.Embed(
-                title="🏆 Крок 1: Вибір ролей",
-                color=0x7c7cf0,
-                description=f"**Сторінка {self.current_page + 1}/{self.total_pages}**\n"
-                           f"**Обрано ролей:** {len(self.selected_roles)}\n" + 
-                           (", ".join([role.mention for role in self.selected_roles[:10]]) + 
-                            (f" і ще {len(self.selected_roles) - 10}..." if len(self.selected_roles) > 10 else "") 
-                            if self.selected_roles else "Жодної ролі не обрано")
-            )
-            
-            await interaction.response.edit_message(embed=embed, view=self)
-
-    async def next_page(self, interaction: discord.Interaction):
-        if self.current_page < self.total_pages - 1:
-            self.current_page += 1
-            self.update_select()
-            
-            embed = discord.Embed(
-                title="🏆 Крок 1: Вибір ролей",
-                color=0x7c7cf0,
-                description=f"**Сторінка {self.current_page + 1}/{self.total_pages}**\n"
-                           f"**Обрано ролей:** {len(self.selected_roles)}\n" + 
-                           (", ".join([role.mention for role in self.selected_roles[:10]]) + 
-                            (f" і ще {len(self.selected_roles) - 10}..." if len(self.selected_roles) > 10 else "") 
-                            if self.selected_roles else "Жодної ролі не обрано")
-            )
-            
-            await interaction.response.edit_message(embed=embed, view=self)
-
-    async def select_all_on_page(self, interaction: discord.Interaction):
-        page_roles = self.get_page_roles()
-        for role in page_roles:
-            if role not in self.selected_roles:
-                self.selected_roles.append(role)
-        
-        self.update_select()
-        
-        embed = discord.Embed(
-            title="🏆 Крок 1: Вибір ролей",
-            color=0x7c7cf0,
-            description=f"**Сторінка {self.current_page + 1}/{self.total_pages}**\n"
-                       f"**Обрано ролей:** {len(self.selected_roles)}\n" + 
-                       (", ".join([role.mention for role in self.selected_roles[:10]]) + 
-                        (f" і ще {len(self.selected_roles) - 10}..." if len(self.selected_roles) > 10 else "") 
-                        if self.selected_roles else "Жодної ролі не обрано")
-        )
-        
-        await interaction.response.edit_message(embed=embed, view=self)
-
-    async def clear_all(self, interaction: discord.Interaction):
-        self.selected_roles.clear()
-        self.update_select()
-        
-        embed = discord.Embed(
-            title="🏆 Крок 1: Вибір ролей",
-            color=0x7c7cf0,
-            description=f"**Сторінка {self.current_page + 1}/{self.total_pages}**\n"
-                       f"**Обрано ролей:** 0\nЖодної ролі не обрано"
-        )
-        
-        await interaction.response.edit_message(embed=embed, view=self)
 
     async def continue_setup(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -183,9 +53,7 @@ class RoleSelectView(discord.ui.View):
         embed = discord.Embed(
             title="🏆 Крок 2: Тип активності",
             color=0x7c7cf0,
-            description=f"Обрано ролей: {', '.join([role.mention for role in self.selected_roles[:5]])}" +
-                       (f" і ще {len(self.selected_roles) - 5}..." if len(self.selected_roles) > 5 else "") +
-                       "\n\nОбери тип активності для цих ролей:"
+            description=f"Обрано ролей: {', '.join([role.mention for role in self.selected_roles])}\n\nОбери тип активності для цих ролей:"
         )
         
         await interaction.edit_original_response(embed=embed, view=view)
@@ -208,7 +76,7 @@ class RoleSelect(discord.ui.Select):
         super().__init__(
             placeholder="Обери ролі для налаштування...",
             options=options,
-            max_values=min(len(options), 25)
+            max_values=min(len(options), 10)
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -219,117 +87,18 @@ class RoleSelect(discord.ui.Select):
             if role:
                 new_selected.append(role)
         
-        # Видаляємо з обраних ті, що не в поточному виборі
-        current_page_roles = self.view.get_page_roles()
-        self.view.selected_roles = [role for role in self.view.selected_roles if role not in current_page_roles]
-        # Додаємо нові обрані
-        self.view.selected_roles.extend(new_selected)
-        
+        self.view.selected_roles = new_selected
         self.view.update_select()
         
         embed = discord.Embed(
             title="🏆 Крок 1: Вибір ролей",
             color=0x7c7cf0,
-            description=f"**Сторінка {self.view.current_page + 1}/{self.view.total_pages}**\n"
-                       f"**Обрано ролей:** {len(self.view.selected_roles)}\n" + 
-                       (", ".join([role.mention for role in self.view.selected_roles[:10]]) + 
-                        (f" і ще {len(self.view.selected_roles) - 10}..." if len(self.view.selected_roles) > 10 else "") 
-                        if self.view.selected_roles else "Жодної ролі не обрано")
+            description=f"**Обрано ролей:** {len(new_selected)}\n" + 
+                       (", ".join([role.mention for role in new_selected]) if new_selected else "Жодної ролі не обрано")
         )
         
         await interaction.response.edit_message(embed=embed, view=self.view)
 
-class ConfigDeleteView(discord.ui.View):
-    def __init__(self, guild_id: str, configs: List[dict]):
-        super().__init__(timeout=300)
-        self.guild_id = guild_id
-        self.configs = configs
-        self.setup_select()
-
-    def setup_select(self):
-        if not self.configs:
-            return
-        
-        activity_names = {
-            ActivityType.CHAT: "📝 Чат",
-            ActivityType.VOICE: "🎤 Войс",
-            ActivityType.COMBINED: "🏆 Загальна"
-        }
-        
-        # Групуємо конфігурації по ролях для зручності
-        role_configs = {}
-        for config in self.configs:
-            role_id = config["role_id"]
-            if role_id not in role_configs:
-                role_configs[role_id] = []
-            role_configs[role_id].append(config)
-        
-        options = []
-        for role_id, configs_list in list(role_configs.items())[:25]:  # Discord limit
-            guild = discord.utils.get(discord.Client().guilds, id=int(self.guild_id)) if hasattr(discord.Client(), 'guilds') else None
-            role_name = f"Роль ID: {role_id}"  # Fallback
-            
-            # Створюємо опис конфігурацій для цієї ролі
-            config_descriptions = []
-            for config in configs_list:
-                activity = activity_names.get(config["activity_type"], config["activity_type"])
-                position = config["top_position"]
-                duration = config["duration_days"]
-                config_descriptions.append(f"{activity} • Топ {position} • {duration}д")
-            
-            options.append(discord.SelectOption(
-                label=role_name[:100],
-                value=role_id,
-                description=(" | ".join(config_descriptions))[:100],
-                emoji="🗑️"
-            ))
-        
-        if options:
-            select = discord.ui.Select(
-                placeholder="Обери ролі для видалення конфігурацій...",
-                options=options,
-                max_values=min(len(options), 25)
-            )
-            select.callback = self.delete_configs
-            self.add_item(select)
-
-    async def delete_configs(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        
-        try:
-            deleted_count = 0
-            for role_id in interaction.data['values']:
-                result = await db.weekly_roles.delete_many({
-                    "guild_id": self.guild_id,
-                    "role_id": role_id
-                })
-                deleted_count += result.deleted_count
-            
-            embed = discord.Embed(
-                title="✅ Конфігурації видалено",
-                color=0x00ff00,
-                description=f"Успішно видалено **{deleted_count}** конфігурацій для **{len(interaction.data['values'])}** ролей."
-            )
-            
-            embed.add_field(
-                name="📋 Видалені ролі",
-                value="\n".join([f"• Роль ID: {role_id}" for role_id in interaction.data['values']]),
-                inline=False
-            )
-            
-            embed.set_footer(text=f"Видалив: {interaction.user.display_name}")
-            
-            await interaction.edit_original_response(embed=embed, view=None)
-            
-        except Exception as e:
-            embed = discord.Embed(
-                title="❌ Помилка",
-                color=0xff0000,
-                description=f"Не вдалося видалити конфігурації: {str(e)}"
-            )
-            await interaction.edit_original_response(embed=embed, view=None)
-
-# Решта коду залишається без змін...
 class ActivityTypeView(discord.ui.View):
     def __init__(self, roles: List[discord.Role]):
         super().__init__(timeout=300)
@@ -364,9 +133,8 @@ class ActivityTypeView(discord.ui.View):
         embed = discord.Embed(
             title="🏆 Крок 3: Топ позиції",
             color=0x7c7cf0,
-            description=f"**Ролі:** {', '.join([role.mention for role in self.roles[:5]])}" +
-                       (f" і ще {len(self.roles) - 5}..." if len(self.roles) > 5 else "") + "\n" +
-                       f"**Тип:** {activity_names[self.activity_type]}\n\n" +
+            description=f"**Ролі:** {', '.join([role.mention for role in self.roles])}\n"
+                       f"**Тип:** {activity_names[self.activity_type]}\n\n"
                        f"Обери які топ позиції будуть отримувати ці ролі:"
         )
         
@@ -412,8 +180,7 @@ class PositionSelectView(discord.ui.View):
         embed = discord.Embed(
             title="🏆 Крок 3: Топ позиції",
             color=0x7c7cf0,
-            description=f"**Ролі:** {', '.join([role.mention for role in self.roles[:5]])}" +
-                       (f" і ще {len(self.roles) - 5}..." if len(self.roles) > 5 else "") + "\n" +
+            description=f"**Ролі:** {', '.join([role.mention for role in self.roles])}\n"
                        f"**Тип:** {self.activity_type}\n"
                        f"**Позиції:** {positions_text}\n\n"
                        f"✅ Натисни 'Продовжити' для переходу до наступного кроку"
@@ -559,9 +326,7 @@ class LogChannelSelectView(discord.ui.View):
             }
             
             positions_text = ", ".join([f"Топ {pos}" for pos in self.top_positions])
-            roles_text = ", ".join([role.mention for role in self.roles[:5]])
-            if len(self.roles) > 5:
-                roles_text += f" і ще {len(self.roles) - 5}..."
+            roles_text = ", ".join([role.mention for role in self.roles])
             
             embed = discord.Embed(
                 title="✅ Налаштування завершено!",
@@ -616,8 +381,7 @@ class WeeklyRoleSystem(commands.Cog):
         embed = discord.Embed(
             title="🏆 Крок 1: Вибір ролей",
             color=0x7c7cf0,
-            description="Обери ролі, які мають видаватися за активність.\nМожна обрати декілька ролей для однакових налаштувань.\n\n" +
-                       "💡 Використовуй кнопки навігації для перегляду всіх ролей на сервері."
+            description="Обери ролі, які мають видаватися за активність.\nМожна обрати декілька ролей для однакових налаштувань."
         )
 
         view = RoleSelectView(interaction.guild)
@@ -879,7 +643,8 @@ class WeeklyRoleSystem(commands.Cog):
 
             for role_id, role_configs_list in list(role_configs.items())[:10]:  # Максимум 10 ролей
                 role = interaction.guild.get_role(int(role_id))
-                role_name = role.name if role else f"Видалена роль (ID: {role_id})"
+                if not role:
+                    continue
 
                 config_texts = []
                 for config in role_configs_list:
@@ -892,38 +657,12 @@ class WeeklyRoleSystem(commands.Cog):
                     config_texts.append(config_text)
 
                 embed.add_field(
-                    name=f"{role_name}",
+                    name=f"{role.name}",
                     value="\n".join(config_texts),
                     inline=False
                 )
 
-            # Додаємо кнопку видалення конфігурацій
-            delete_view = discord.ui.View(timeout=300)
-            delete_btn = discord.ui.Button(
-                label="🗑️ Видалити конфігурації",
-                style=discord.ButtonStyle.danger,
-                emoji="🗑️"
-            )
-            
-            async def delete_callback(button_interaction):
-                await button_interaction.response.defer()
-                
-                # Створюємо view для видалення
-                delete_config_view = ConfigDeleteView(str(interaction.guild.id), configs)
-                
-                delete_embed = discord.Embed(
-                    title="🗑️ Видалення конфігурацій",
-                    color=0xff6b6b,
-                    description="Обери ролі, для яких потрібно видалити всі конфігурації щотижневих ролей.\n"
-                               "**⚠️ Увага:** Ця дія незворотна!"
-                )
-                
-                await button_interaction.edit_original_response(embed=delete_embed, view=delete_config_view)
-            
-            delete_btn.callback = delete_callback
-            delete_view.add_item(delete_btn)
-
-            await interaction.followup.send(embed=embed, view=delete_view)
+            await interaction.followup.send(embed=embed)
 
         except Exception as e:
             await interaction.followup.send(f"❌ Помилка: {str(e)}")
