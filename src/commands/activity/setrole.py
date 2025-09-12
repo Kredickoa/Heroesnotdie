@@ -69,7 +69,7 @@ class RoleSelect(discord.ui.Select):
             options.append(discord.SelectOption(
                 label=role.name[:100],
                 value=str(role.id),
-                description=f"Позиція: {role.position}",
+                description=f"Позиція: {role.position}" + (" • ✅ Обрано" if is_selected else ""),
                 emoji="✅" if is_selected else "⚪"
             ))
         
