@@ -2,502 +2,460 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta, time
+from typing import List, Optional
 from modules.db import get_database
 import asyncio
 
 db = get_database()
 
-class WeeklyRoleView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
+class ActivityType:
+    CHAT = "chat"
+    VOICE = "voice" 
+    COMBINED = "combined"
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Перевіряє чи користувач має право використовувати кнопки"""
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.response.send_message("❌ У тебе немає прав для управління ролями!", ephemeral=True)
-            return False
-        return True
+class RoleSelectView(discord.ui.View):
+    def __init__(self, guild: discord.Guild):
+        super().__init__(timeout=300)
+        self.guild = guild
+        self.selected_roles: List[discord.Role] = []
+        self.update_select()
 
-    @discord.ui.button(emoji="📝", label="Роль за топ чату", style=discord.ButtonStyle.primary, row=0)
-    async def chat_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Налаштувати роль за топ активність в чаті"""
-        await interaction.response.send_message("📝 **Налаштування ролі за топ активність в чаті**\n\nВкажи роль (згадування @роль або ID):", ephemeral=True)
+    def update_select(self):
+        # Очищуємо всі елементи
+        self.clear_items()
         
-        def check(message):
-            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
+        # Фільтруємо ролі (не @everyone, не боти, не вищі за бота)
+        available_roles = [
+            role for role in self.guild.roles 
+            if role != self.guild.default_role 
+            and not role.managed 
+            and role.position < self.guild.me.top_role.position
+        ][:25]  # Discord limit
+        
+        if available_roles:
+            select = RoleSelect(available_roles, self.selected_roles)
+            self.add_item(select)
+        
+        # Кнопка продовження
+        if self.selected_roles:
+            continue_btn = discord.ui.Button(
+                label=f"Продовжити з {len(self.selected_roles)} роллю/ями",
+                style=discord.ButtonStyle.green,
+                emoji="✅"
+            )
+            continue_btn.callback = self.continue_setup
+            self.add_item(continue_btn)
 
+    async def continue_setup(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        view = ActivityTypeView(self.selected_roles)
+        
+        embed = discord.Embed(
+            title="🏆 Крок 2: Тип активності",
+            color=0x7c7cf0,
+            description=f"Обрано ролей: {', '.join([role.mention for role in self.selected_roles])}\n\nОбери тип активності для цих ролей:"
+        )
+        
+        await interaction.edit_original_response(embed=embed, view=view)
+
+class RoleSelect(discord.ui.Select):
+    def __init__(self, roles: List[discord.Role], selected: List[discord.Role]):
+        self.available_roles = roles
+        self.selected_roles = selected
+        
+        options = []
+        for role in roles:
+            is_selected = role in selected
+            options.append(discord.SelectOption(
+                label=role.name[:100],
+                value=str(role.id),
+                description=f"Позиція: {role.position}",
+                emoji="✅" if is_selected else "⚪"
+            ))
+        
+        super().__init__(
+            placeholder="Обери ролі для налаштування...",
+            options=options,
+            max_values=min(len(options), 10)
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        # Оновлюємо список обраних ролей
+        new_selected = []
+        for role_id in self.values:
+            role = interaction.guild.get_role(int(role_id))
+            if role:
+                new_selected.append(role)
+        
+        self.view.selected_roles = new_selected
+        self.view.update_select()
+        
+        embed = discord.Embed(
+            title="🏆 Крок 1: Вибір ролей",
+            color=0x7c7cf0,
+            description=f"**Обрано ролей:** {len(new_selected)}\n" + 
+                       (", ".join([role.mention for role in new_selected]) if new_selected else "Жодної ролі не обрано")
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+class ActivityTypeView(discord.ui.View):
+    def __init__(self, roles: List[discord.Role]):
+        super().__init__(timeout=300)
+        self.roles = roles
+        self.activity_type = None
+
+    @discord.ui.button(label="Топ чату", emoji="📝", style=discord.ButtonStyle.primary, row=0)
+    async def chat_top(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.activity_type = ActivityType.CHAT
+        await self.continue_to_positions(interaction)
+
+    @discord.ui.button(label="Топ войсу", emoji="🎤", style=discord.ButtonStyle.primary, row=0)
+    async def voice_top(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.activity_type = ActivityType.VOICE
+        await self.continue_to_positions(interaction)
+
+    @discord.ui.button(label="Загальний топ", emoji="🏆", style=discord.ButtonStyle.primary, row=0)
+    async def combined_top(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.activity_type = ActivityType.COMBINED
+        await self.continue_to_positions(interaction)
+
+    async def continue_to_positions(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        view = PositionSelectView(self.roles, self.activity_type)
+        
+        activity_names = {
+            ActivityType.CHAT: "📝 Активність в чаті",
+            ActivityType.VOICE: "🎤 Активність у войсі", 
+            ActivityType.COMBINED: "🏆 Загальна активність"
+        }
+        
+        embed = discord.Embed(
+            title="🏆 Крок 3: Топ позиції",
+            color=0x7c7cf0,
+            description=f"**Ролі:** {', '.join([role.mention for role in self.roles])}\n"
+                       f"**Тип:** {activity_names[self.activity_type]}\n\n"
+                       f"Обери які топ позиції будуть отримувати ці ролі:"
+        )
+        
+        await interaction.edit_original_response(embed=embed, view=view)
+
+class PositionSelectView(discord.ui.View):
+    def __init__(self, roles: List[discord.Role], activity_type: str):
+        super().__init__(timeout=300)
+        self.roles = roles
+        self.activity_type = activity_type
+        self.top_positions = []
+
+    @discord.ui.select(
+        placeholder="Обери топ позиції (можна декілька)...",
+        options=[
+            discord.SelectOption(label="Топ 1", value="1", emoji="🥇"),
+            discord.SelectOption(label="Топ 2", value="2", emoji="🥈"), 
+            discord.SelectOption(label="Топ 3", value="3", emoji="🥉"),
+            discord.SelectOption(label="Топ 4", value="4", emoji="4️⃣"),
+            discord.SelectOption(label="Топ 5", value="5", emoji="5️⃣"),
+            discord.SelectOption(label="Топ 1-5", value="1-5", emoji="🏆"),
+            discord.SelectOption(label="Топ 1-10", value="1-10", emoji="🔝"),
+            discord.SelectOption(label="Топ 1-15", value="1-15", emoji="⭐"),
+        ],
+        max_values=8
+    )
+    async def position_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self.top_positions = select.values
+        
+        # Кнопка продовження
+        if not hasattr(self, 'continue_btn'):
+            self.continue_btn = discord.ui.Button(
+                label="Продовжити",
+                style=discord.ButtonStyle.green,
+                emoji="✅",
+                row=1
+            )
+            self.continue_btn.callback = self.continue_to_duration
+            self.add_item(self.continue_btn)
+        
+        positions_text = ", ".join([f"Топ {pos}" for pos in self.top_positions])
+        
+        embed = discord.Embed(
+            title="🏆 Крок 3: Топ позиції",
+            color=0x7c7cf0,
+            description=f"**Ролі:** {', '.join([role.mention for role in self.roles])}\n"
+                       f"**Тип:** {self.activity_type}\n"
+                       f"**Позиції:** {positions_text}\n\n"
+                       f"✅ Натисни 'Продовжити' для переходу до наступного кроку"
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def continue_to_duration(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        view = DurationSelectView(self.roles, self.activity_type, self.top_positions)
+        
+        embed = discord.Embed(
+            title="🏆 Крок 4: Тривалість",
+            color=0x7c7cf0,
+            description=f"Обери як часто система має оновлювати ці ролі:"
+        )
+        
+        await interaction.edit_original_response(embed=embed, view=view)
+
+class DurationSelectView(discord.ui.View):
+    def __init__(self, roles: List[discord.Role], activity_type: str, top_positions: List[str]):
+        super().__init__(timeout=300)
+        self.roles = roles
+        self.activity_type = activity_type
+        self.top_positions = top_positions
+
+    @discord.ui.button(label="7 днів", emoji="1️⃣", style=discord.ButtonStyle.secondary, row=0)
+    async def seven_days(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.continue_to_logs(interaction, 7)
+
+    @discord.ui.button(label="14 днів", emoji="2️⃣", style=discord.ButtonStyle.secondary, row=0) 
+    async def fourteen_days(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.continue_to_logs(interaction, 14)
+
+    @discord.ui.button(label="30 днів", emoji="3️⃣", style=discord.ButtonStyle.secondary, row=0)
+    async def thirty_days(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.continue_to_logs(interaction, 30)
+
+    async def continue_to_logs(self, interaction: discord.Interaction, duration: int):
+        await interaction.response.defer()
+        view = LogChannelSelectView(self.roles, self.activity_type, self.top_positions, duration)
+        
+        embed = discord.Embed(
+            title="🏆 Крок 5: Канал логів (опціонально)",
+            color=0x7c7cf0,
+            description=f"Обери канал для логування змін ролей або пропусти цей крок:"
+        )
+        
+        await interaction.edit_original_response(embed=embed, view=view)
+
+class LogChannelSelectView(discord.ui.View):
+    def __init__(self, roles: List[discord.Role], activity_type: str, top_positions: List[str], duration: int):
+        super().__init__(timeout=300)
+        self.roles = roles
+        self.activity_type = activity_type
+        self.top_positions = top_positions
+        self.duration = duration
+        self.log_channel = None
+        self.setup_select()
+
+    def setup_select(self):
+        text_channels = [ch for ch in self.roles[0].guild.text_channels if ch.permissions_for(self.roles[0].guild.me).send_messages][:25]
+        
+        if text_channels:
+            options = []
+            for channel in text_channels:
+                options.append(discord.SelectOption(
+                    label=f"#{channel.name}"[:100],
+                    value=str(channel.id),
+                    description=channel.category.name if channel.category else "Без категорії"
+                ))
+            
+            select = discord.ui.Select(
+                placeholder="Обери канал для логів...",
+                options=options,
+                row=0
+            )
+            select.callback = self.channel_selected
+            self.add_item(select)
+
+        # Кнопки
+        skip_btn = discord.ui.Button(label="Пропустити", style=discord.ButtonStyle.secondary, emoji="⏭️", row=1)
+        skip_btn.callback = lambda i: self.finish_setup(i, None)
+        self.add_item(skip_btn)
+
+    async def channel_selected(self, interaction: discord.Interaction):
+        channel_id = int(interaction.data['values'][0])
+        self.log_channel = interaction.guild.get_channel(channel_id)
+        
+        # Додаємо кнопку завершення
+        finish_btn = discord.ui.Button(
+            label=f"Завершити з #{self.log_channel.name}",
+            style=discord.ButtonStyle.green,
+            emoji="✅",
+            row=2
+        )
+        finish_btn.callback = lambda i: self.finish_setup(i, self.log_channel)
+        self.add_item(finish_btn)
+        
+        embed = discord.Embed(
+            title="🏆 Крок 5: Канал логів",
+            color=0x7c7cf0,
+            description=f"**Обрано канал:** {self.log_channel.mention}\n\n✅ Натисни 'Завершити' щоб зберегти налаштування"
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def finish_setup(self, interaction: discord.Interaction, log_channel: Optional[discord.TextChannel]):
+        await interaction.response.defer()
+        
         try:
-            # Отримуємо роль
-            role_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            role = await self._parse_role(interaction.guild, role_msg.content.strip())
-            
-            if not role:
-                await interaction.followup.send("❌ Роль не знайдено! Спробуй ще раз.", ephemeral=True)
-                return
-
-            await interaction.followup.send(f"✅ Роль **{role.name}** знайдено!\n\nСкільки людей має отримати цю роль? (топ 1-50):", ephemeral=True)
-            
-            # Отримуємо кількість топу
-            top_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            
-            try:
-                top_count = int(top_msg.content.strip())
-                if top_count <= 0 or top_count > 50:
-                    await interaction.followup.send("❌ Кількість повинна бути від 1 до 50!", ephemeral=True)
-                    return
-            except ValueError:
-                await interaction.followup.send("❌ Введи правильне число!", ephemeral=True)
-                return
-
-            # Зберігаємо в БД
-            await db.weekly_roles.update_one(
-                {"guild_id": str(interaction.guild.id), "role_id": str(role.id)},
-                {
-                    "$set": {
+            # Зберігаємо конфігурацію в БД
+            for role in self.roles:
+                for position in self.top_positions:
+                    config_data = {
                         "guild_id": str(interaction.guild.id),
                         "role_id": str(role.id),
-                        "type": "chat",
-                        "top_count": top_count,
+                        "activity_type": self.activity_type,
+                        "top_position": position,
+                        "duration_days": self.duration,
+                        "log_channel_id": str(log_channel.id) if log_channel else None,
                         "enabled": True,
                         "created_by": interaction.user.id,
-                        "created_at": datetime.utcnow()
+                        "created_at": datetime.utcnow(),
+                        "next_update": datetime.utcnow() + timedelta(days=self.duration)
                     }
-                },
-                upsert=True
-            )
+                    
+                    await db.weekly_roles.update_one(
+                        {
+                            "guild_id": str(interaction.guild.id),
+                            "role_id": str(role.id),
+                            "top_position": position
+                        },
+                        {"$set": config_data},
+                        upsert=True
+                    )
+
+            # Підсумок
+            activity_names = {
+                ActivityType.CHAT: "📝 Чат",
+                ActivityType.VOICE: "🎤 Войс",
+                ActivityType.COMBINED: "🏆 Загальна"
+            }
             
-            await interaction.followup.send(f"✅ Налаштовано роль **{role.name}** для топ {top_count} активних в чаті!", ephemeral=True)
-
-        except asyncio.TimeoutError:
-            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
-
-    @discord.ui.button(emoji="🎤", label="Роль за топ войсу", style=discord.ButtonStyle.primary, row=0)
-    async def voice_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Налаштувати роль за топ активність в войсі"""
-        await interaction.response.send_message("🎤 **Налаштування ролі за топ активність в войсі**\n\nВкажи роль (згадування @роль або ID):", ephemeral=True)
-        
-        def check(message):
-            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
-
-        try:
-            # Отримуємо роль
-            role_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            role = await self._parse_role(interaction.guild, role_msg.content.strip())
-            
-            if not role:
-                await interaction.followup.send("❌ Роль не знайдено! Спробуй ще раз.", ephemeral=True)
-                return
-
-            await interaction.followup.send(f"✅ Роль **{role.name}** знайдено!\n\nСкільки людей має отримати цю роль? (топ 1-50):", ephemeral=True)
-            
-            # Отримуємо кількість топу
-            top_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            
-            try:
-                top_count = int(top_msg.content.strip())
-                if top_count <= 0 or top_count > 50:
-                    await interaction.followup.send("❌ Кількість повинна бути від 1 до 50!", ephemeral=True)
-                    return
-            except ValueError:
-                await interaction.followup.send("❌ Введи правильне число!", ephemeral=True)
-                return
-
-            # Зберігаємо в БД
-            await db.weekly_roles.update_one(
-                {"guild_id": str(interaction.guild.id), "role_id": str(role.id)},
-                {
-                    "$set": {
-                        "guild_id": str(interaction.guild.id),
-                        "role_id": str(role.id),
-                        "type": "voice",
-                        "top_count": top_count,
-                        "enabled": True,
-                        "created_by": interaction.user.id,
-                        "created_at": datetime.utcnow()
-                    }
-                },
-                upsert=True
-            )
-            
-            await interaction.followup.send(f"✅ Налаштовано роль **{role.name}** для топ {top_count} активних в войсі!", ephemeral=True)
-
-        except asyncio.TimeoutError:
-            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
-
-    @discord.ui.button(emoji="🏆", label="Роль за загальний топ", style=discord.ButtonStyle.primary, row=0)
-    async def combined_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Налаштувати роль за топ загальної активності"""
-        await interaction.response.send_message("🏆 **Налаштування ролі за топ загальної активності**\n\nВкажи роль (згадування @роль або ID):", ephemeral=True)
-        
-        def check(message):
-            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
-
-        try:
-            # Отримуємо роль
-            role_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            role = await self._parse_role(interaction.guild, role_msg.content.strip())
-            
-            if not role:
-                await interaction.followup.send("❌ Роль не знайдено! Спробуй ще раз.", ephemeral=True)
-                return
-
-            await interaction.followup.send(f"✅ Роль **{role.name}** знайдено!\n\nСкільки людей має отримати цю роль? (топ 1-50):", ephemeral=True)
-            
-            # Отримуємо кількість топу
-            top_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            
-            try:
-                top_count = int(top_msg.content.strip())
-                if top_count <= 0 or top_count > 50:
-                    await interaction.followup.send("❌ Кількість повинна бути від 1 до 50!", ephemeral=True)
-                    return
-            except ValueError:
-                await interaction.followup.send("❌ Введи правильне число!", ephemeral=True)
-                return
-
-            # Зберігаємо в БД
-            await db.weekly_roles.update_one(
-                {"guild_id": str(interaction.guild.id), "role_id": str(role.id)},
-                {
-                    "$set": {
-                        "guild_id": str(interaction.guild.id),
-                        "role_id": str(role.id),
-                        "type": "combined",
-                        "top_count": top_count,
-                        "enabled": True,
-                        "created_by": interaction.user.id,
-                        "created_at": datetime.utcnow()
-                    }
-                },
-                upsert=True
-            )
-            
-            await interaction.followup.send(f"✅ Налаштовано роль **{role.name}** для топ {top_count} найактивніших загалом!", ephemeral=True)
-
-        except asyncio.TimeoutError:
-            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
-
-    @discord.ui.button(emoji="📊", label="Канал звітів", style=discord.ButtonStyle.secondary, row=0)
-    async def report_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Встановити канал для звітів"""
-        await interaction.response.send_message("📊 **Встановлення каналу для звітів**\n\nВкажи канал (згадування #канал або ID):", ephemeral=True)
-        
-        def check(message):
-            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
-
-        try:
-            # Отримуємо канал
-            channel_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            channel = await self._parse_channel(interaction.guild, channel_msg.content.strip())
-            
-            if not channel or not isinstance(channel, discord.TextChannel):
-                await interaction.followup.send("❌ Текстовий канал не знайдено! Спробуй ще раз.", ephemeral=True)
-                return
-
-            # Зберігаємо в БД
-            await db.guild_settings.update_one(
-                {"guild_id": str(interaction.guild.id)},
-                {
-                    "$set": {
-                        "guild_id": str(interaction.guild.id),
-                        "weekly_report_channel_id": str(channel.id),
-                        "updated_by": interaction.user.id,
-                        "updated_at": datetime.utcnow()
-                    }
-                },
-                upsert=True
-            )
-            
-            await interaction.followup.send(f"✅ Канал для щотижневих звітів встановлено: {channel.mention}!", ephemeral=True)
-
-        except asyncio.TimeoutError:
-            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
-
-    @discord.ui.button(emoji="🗑️", label="Видалити роль", style=discord.ButtonStyle.danger, row=1)
-    async def delete_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Видалити налаштування ролі"""
-        await interaction.response.send_message("🗑️ **Видалення налаштувань ролі**\n\nВкажи роль для видалення (згадування @роль або ID):", ephemeral=True)
-        
-        def check(message):
-            return message.author.id == interaction.user.id and message.channel.id == interaction.channel.id
-
-        try:
-            # Отримуємо роль
-            role_msg = await interaction.client.wait_for('message', check=check, timeout=60.0)
-            role = await self._parse_role(interaction.guild, role_msg.content.strip())
-            
-            if not role:
-                await interaction.followup.send("❌ Роль не знайдено! Спробуй ще раз.", ephemeral=True)
-                return
-
-            # Видаляємо з БД
-            result = await db.weekly_roles.delete_one({
-                "guild_id": str(interaction.guild.id),
-                "role_id": str(role.id)
-            })
-            
-            if result.deleted_count > 0:
-                await interaction.followup.send(f"✅ Видалено налаштування для ролі **{role.name}**!", ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ Налаштування для ролі **{role.name}** не знайдено!", ephemeral=True)
-
-        except asyncio.TimeoutError:
-            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
-
-    @discord.ui.button(emoji="📋", label="Статус системи", style=discord.ButtonStyle.success, row=1)
-    async def system_status(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Показати стан системи"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            weekly_roles = await db.weekly_roles.find({"guild_id": str(interaction.guild.id), "enabled": True}).to_list(100)
-            guild_settings = await db.guild_settings.find_one({"guild_id": str(interaction.guild.id)})
+            positions_text = ", ".join([f"Топ {pos}" for pos in self.top_positions])
+            roles_text = ", ".join([role.mention for role in self.roles])
             
             embed = discord.Embed(
-                title="⚙️ Стан системи щотижневих ролей",
-                color=0x7c7cf0,
-                description=""
-            )
-            
-            if not weekly_roles:
-                embed.add_field(name="❌ Налаштування відсутні", value="Система не налаштована", inline=False)
-            else:
-                chat_roles = []
-                voice_roles = []
-                combined_roles = []
-                
-                for config in weekly_roles:
-                    role = interaction.guild.get_role(int(config["role_id"]))
-                    if not role:
-                        continue
-                    
-                    has_role = len([m for m in interaction.guild.members if role in m.roles])
-                    role_info = f"**{role.name}** - топ {config['top_count']}\nМає роль: {has_role} осіб"
-                    
-                    if config["type"] == "chat":
-                        chat_roles.append(role_info)
-                    elif config["type"] == "voice":
-                        voice_roles.append(role_info)
-                    elif config["type"] == "combined":
-                        combined_roles.append(role_info)
-                
-                if chat_roles:
-                    embed.add_field(name="📝 Ролі за топ чату", value="\n\n".join(chat_roles), inline=False)
-                
-                if voice_roles:
-                    embed.add_field(name="🎤 Ролі за топ войсу", value="\n\n".join(voice_roles), inline=False)
-                    
-                if combined_roles:
-                    embed.add_field(name="🏆 Ролі за загальний топ", value="\n\n".join(combined_roles), inline=False)
-            
-            # Інформація про канал звітів
-            report_channel = None
-            if guild_settings and guild_settings.get("weekly_report_channel_id"):
-                report_channel = interaction.guild.get_channel(int(guild_settings["weekly_report_channel_id"]))
-            
-            channel_status = report_channel.mention if report_channel else "❌ Не встановлено"
-            embed.add_field(name="📊 Канал звітів", value=channel_status, inline=False)
-            
-            # Інформація про наступне оновлення
-            now = datetime.now()
-            days_until_monday = (7 - now.weekday()) % 7
-            if days_until_monday == 0:
-                days_until_monday = 7
-            next_update = now + timedelta(days=days_until_monday)
-            embed.add_field(name="🕐 Наступне оновлення", value=f"<t:{int(next_update.timestamp())}:R>", inline=False)
-            
-            embed.set_footer(text=f"Запросив: {interaction.user.display_name}")
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        except Exception as e:
-            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
-
-    @discord.ui.button(emoji="🔄", label="Оновити зараз", style=discord.ButtonStyle.success, row=1)
-    async def update_now(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Запустити оновлення ролей зараз"""
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # Створюємо екземпляр системи для обробки
-            system = WeeklyRoleSystem(interaction.client)
-            report = await system._process_guild_weekly_roles(interaction.guild)
-            
-            embed = discord.Embed(
-                title="📊 Результат оновлення ролей",
+                title="✅ Налаштування завершено!",
                 color=0x00ff00,
-                description=""
+                description="Система щотижневих ролей успішно налаштована"
             )
             
-            total_assigned = sum(report["assigned"].values())
-            total_removed = sum(report["removed"].values())
+            embed.add_field(
+                name="📋 Конфігурація",
+                value=f"**Ролі:** {roles_text}\n"
+                     f"**Активність:** {activity_names[self.activity_type]}\n" 
+                     f"**Позиції:** {positions_text}\n"
+                     f"**Оновлення:** Кожні {self.duration} днів\n"
+                     f"**Логи:** {log_channel.mention if log_channel else 'Вимкнено'}",
+                inline=False
+            )
             
-            if total_assigned > 0:
-                assigned_text = f"**Всього видано: {total_assigned}**\n"
-                for role_name, count in report["assigned"].items():
-                    if count > 0:
-                        assigned_text += f"• {role_name}: +{count}\n"
-                embed.add_field(name="✅ Видано ролей", value=assigned_text, inline=False)
+            next_update = datetime.utcnow() + timedelta(days=self.duration)
+            embed.add_field(
+                name="⏰ Наступне оновлення",
+                value=f"<t:{int(next_update.timestamp())}:F>",
+                inline=False
+            )
             
-            if total_removed > 0:
-                removed_text = f"**Всього знято: {total_removed}**\n"
-                for role_name, count in report["removed"].items():
-                    if count > 0:
-                        removed_text += f"• {role_name}: -{count}\n"
-                embed.add_field(name="❌ Знято ролей", value=removed_text, inline=False)
-                
-            if total_assigned == 0 and total_removed == 0:
-                embed.add_field(name="✅ Все актуально", value="Жодних змін не потрібно", inline=False)
+            embed.set_footer(text=f"Налаштував: {interaction.user.display_name}")
             
-            embed.set_footer(text=f"Виконав: {interaction.user.display_name}")
-            
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.edit_original_response(embed=embed, view=None)
             
         except Exception as e:
-            await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
-
-    async def _parse_role(self, guild, role_input):
-        """Парсить роль з введення користувача"""
-        role = None
-        
-        if role_input.startswith('<@&') and role_input.endswith('>'):
-            role_id = role_input[3:-1]
-            try:
-                role = guild.get_role(int(role_id))
-            except:
-                pass
-        else:
-            try:
-                role = guild.get_role(int(role_input))
-            except:
-                pass
-        
-        return role
-
-    async def _parse_channel(self, guild, channel_input):
-        """Парсить канал з введення користувача"""
-        channel = None
-        
-        if channel_input.startswith('<#') and channel_input.endswith('>'):
-            channel_id = channel_input[2:-1]
-            try:
-                channel = guild.get_channel(int(channel_id))
-            except:
-                pass
-        else:
-            try:
-                channel = guild.get_channel(int(channel_input))
-            except:
-                pass
-        
-        return channel
+            embed = discord.Embed(
+                title="❌ Помилка",
+                color=0xff0000,
+                description=f"Не вдалося зберегти налаштування: {str(e)}"
+            )
+            await interaction.edit_original_response(embed=embed, view=None)
 
 class WeeklyRoleSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.weekly_role_update.start()
+        self.role_updater.start()
 
     def cog_unload(self):
-        self.weekly_role_update.cancel()
+        self.role_updater.cancel()
 
-    @app_commands.command(name="weekly-setup", description="[АДМІН] Налаштування системи щотижневих ролей")
-    async def weekly_setup(self, interaction: discord.Interaction):
-        """Панель управління щотижневими ролями"""
-        # Перевіряємо права
+    @app_commands.command(name="weekly-role", description="[АДМІН] Налаштування системи щотижневих ролей")
+    async def weekly_role(self, interaction: discord.Interaction):
+        """Налаштування системи щотижневих ролей"""
         if not interaction.user.guild_permissions.manage_roles:
             await interaction.response.send_message("❌ У тебе немає прав для управління ролями!", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=False)
-
         embed = discord.Embed(
-            title="🏆 Система щотижневих ролей",
+            title="🏆 Крок 1: Вибір ролей",
             color=0x7c7cf0,
-            description=(
-                "Налаштуй автоматичну видачу ролей за щотижневу активність!\n\n"
-                "**Доступні функції:**\n"
-                "📝 **Роль за топ чату** — для найактивніших в чаті\n"
-                "🎤 **Роль за топ войсу** — для найактивніших в голосових каналах\n"
-                "🏆 **Роль за загальний топ** — для найактивніших загалом\n"
-                "📊 **Канал звітів** — встановити канал для щотижневих звітів\n"
-                "🗑️ **Видалити роль** — видалити налаштування для ролі\n"
-                "📋 **Статус системи** — переглянути поточні налаштування\n"
-                "🔄 **Оновити зараз** — запустити оновлення ролей негайно\n\n"
-                "💡 **Ролі оновлюються щопонеділка о 00:00**\n"
-                "📈 **Активність рахується за останні 7 днів**"
-            )
+            description="Обери ролі, які мають видаватися за активність.\nМожна обрати декілька ролей для однакових налаштувань."
         )
-        embed.set_footer(text="Кнопки працюють постійно • Потрібні права: Управління ролями")
 
-        view = WeeklyRoleView()
-        await interaction.followup.send(embed=embed, view=view, ephemeral=False)
+        view = RoleSelectView(interaction.guild)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    # ВИПРАВЛЕННЯ: Використовуємо datetime.time замість datetime.datetime
-    @tasks.loop(time=time(hour=0, minute=0, second=0))
-    async def weekly_role_update(self):
-        """Щотижневе оновлення ролей (кожного понеділка)"""
-        # Перевіряємо чи сьогодні понеділок
-        if datetime.now().weekday() != 0:
-            return
-
+    @tasks.loop(hours=1)  # Перевіряємо кожну годину
+    async def role_updater(self):
+        """Оновлює ролі згідно з розкладом"""
         if db is None:
             return
 
-        for guild in self.bot.guilds:
-            try:
-                report = await self._process_guild_weekly_roles(guild)
-                await self._send_weekly_report(guild, report)
-            except Exception as e:
-                print(f"Error processing weekly roles for guild {guild.id}: {e}")
-
-    async def _process_guild_weekly_roles(self, guild):
-        """Обробляє щотижневі ролі для сервера"""
-        weekly_roles = await db.weekly_roles.find({"guild_id": str(guild.id), "enabled": True}).to_list(100)
+        current_time = datetime.utcnow()
         
-        report = {
-            "assigned": {},
-            "removed": {}
-        }
+        # Знаходимо всі конфігурації, які потрібно оновити
+        configs_to_update = await db.weekly_roles.find({
+            "enabled": True,
+            "next_update": {"$lte": current_time}
+        }).to_list(1000)
 
-        # Отримуємо дані активності за останні 7 днів
+        for config in configs_to_update:
+            try:
+                guild = self.bot.get_guild(int(config["guild_id"]))
+                if not guild:
+                    continue
+                
+                await self._process_role_config(guild, config)
+                
+                # Оновлюємо час наступного оновлення
+                next_update = current_time + timedelta(days=config["duration_days"])
+                await db.weekly_roles.update_one(
+                    {"_id": config["_id"]},
+                    {"$set": {"next_update": next_update}}
+                )
+                
+            except Exception as e:
+                print(f"Error processing role config {config.get('_id')}: {e}")
+
+    async def _process_role_config(self, guild: discord.Guild, config: dict):
+        """Обробляє одну конфігурацію ролі"""
+        role = guild.get_role(int(config["role_id"]))
+        if not role or role.position >= guild.me.top_role.position:
+            return
+
+        # Отримуємо топ користувачів
+        top_users = await self._get_top_users_for_config(guild, config)
+        
+        # Оновлюємо ролі
+        assigned, removed = await self._update_role_for_users(guild, role, top_users)
+        
+        # Логування
+        if config.get("log_channel_id") and (assigned or removed):
+            await self._log_role_changes(guild, config, role, assigned, removed)
+
+    async def _get_top_users_for_config(self, guild: discord.Guild, config: dict) -> List[int]:
+        """Отримує список користувачів для конфігурації"""
+        activity_type = config["activity_type"]
+        position = config["top_position"]
+        duration = config["duration_days"]
+        
+        # Визначаємо кількість користувачів
+        if "-" in position:
+            # Діапазон (наприклад "1-5")
+            start, end = map(int, position.split("-"))
+            count = end
+        else:
+            # Конкретна позиція (наприклад "3")
+            count = int(position)
+
+        # Отримуємо дані активності
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=7)
-        
-        date_range = [(start_date + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        start_date = end_date - timedelta(days=duration)
+        date_range = [(start_date + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(duration)]
 
-        for config in weekly_roles:
-            role = guild.get_role(int(config["role_id"]))
-            if not role or role.position >= guild.me.top_role.position:
-                continue
-
-            try:
-                # Отримуємо топ користувачів
-                top_users = await self._get_top_users(guild, config["type"], config["top_count"], date_range)
-                
-                # Видаємо/знімаємо ролі
-                assigned, removed = await self._update_role_assignments(guild, role, top_users)
-                
-                report["assigned"][role.name] = assigned
-                report["removed"][role.name] = removed
-                
-            except Exception as e:
-                print(f"Error processing role {role.id}: {e}")
-
-        return report
-
-    async def _get_top_users(self, guild, activity_type, top_count, date_range):
-        """Отримує топ користувачів за активністю"""
-        # Отримуємо всіх користувачів сервера
+        # Отримуємо користувачів сервера
         users_str = await db.users.find({"guild_id": str(guild.id)}).to_list(10000)
         users_int = await db.users.find({"guild_id": guild.id}).to_list(10000)
         users = users_str if len(users_str) > 0 else users_int
@@ -518,126 +476,196 @@ class WeeklyRoleSystem(commands.Cog):
 
             history = user_data.get("history", {})
             
-            if activity_type == "chat":
-                # Підраховуємо повідомлення за тиждень (10 XP за повідомлення)
-                weekly_messages = 0
+            if activity_type == ActivityType.CHAT:
+                # Підраховуємо повідомлення (10 XP за повідомлення)
+                activity_score = 0
                 for date_str in date_range:
                     daily_xp = history.get(date_str, 0)
-                    # Приблизно підраховуємо повідомлення (не точно, але орієнтовно)
-                    # XP може йти з різних джерел, тому це приблизна оцінка
-                    weekly_messages += daily_xp // 10
-                
-                user_activity.append((user_id, weekly_messages))
-                
-            elif activity_type == "voice":
-                # Підраховуємо час в войсі за тиждень (5 XP за хвилину)
-                weekly_voice = 0
+                    activity_score += daily_xp // 10
+                    
+            elif activity_type == ActivityType.VOICE:
+                # Підраховуємо час в войсі (5 XP за хвилину)
+                activity_score = 0
                 for date_str in date_range:
                     daily_xp = history.get(date_str, 0)
-                    # Приблизно підраховуємо хвилини войсу
-                    weekly_voice += daily_xp // 5
-                
-                user_activity.append((user_id, weekly_voice))
-                
-            elif activity_type == "combined":
-                # Підраховуємо загальний XP за тиждень
-                weekly_xp = 0
+                    activity_score += daily_xp // 5
+                    
+            elif activity_type == ActivityType.COMBINED:
+                # Загальний XP
+                activity_score = 0
                 for date_str in date_range:
-                    weekly_xp += history.get(date_str, 0)
-                
-                user_activity.append((user_id, weekly_xp))
+                    activity_score += history.get(date_str, 0)
+            
+            if activity_score > 0:
+                user_activity.append((user_id, activity_score))
 
-        # Сортуємо за активністю та беремо топ
+        # Сортуємо та беремо топ
         user_activity.sort(key=lambda x: x[1], reverse=True)
-        top_users = [user_id for user_id, activity in user_activity[:top_count] if activity > 0]
+        
+        if "-" in position:
+            # Діапазон позицій
+            start, end = map(int, position.split("-"))
+            selected_users = [user_id for user_id, _ in user_activity[start-1:end]]
+        else:
+            # Конкретна позиція
+            pos = int(position)
+            if pos <= len(user_activity):
+                selected_users = [user_activity[pos-1][0]]
+            else:
+                selected_users = []
 
-        return top_users
+        return selected_users
 
-    async def _update_role_assignments(self, guild, role, top_users):
-        """Оновлює призначення ролей"""
-        assigned_count = 0
-        removed_count = 0
+    async def _update_role_for_users(self, guild: discord.Guild, role: discord.Role, target_users: List[int]) -> tuple:
+        """Оновлює ролі для користувачів"""
+        assigned = []
+        removed = []
 
-        # Отримуємо всіх учасників, які зараз мають цю роль
-        current_role_members = [member.id for member in guild.members if role in member.roles]
+        # Поточні власники ролі
+        current_holders = [member.id for member in guild.members if role in member.roles]
 
-        # Знімаємо роль у тих, хто не в топі
-        for member_id in current_role_members:
-            if member_id not in top_users:
-                member = guild.get_member(member_id)
-                if member:
-                    try:
-                        await member.remove_roles(role, reason="Щотижневе оновлення ролей - не в топі")
-                        removed_count += 1
-                    except:
-                        pass
-
-        # Видаємо роль тим, хто в топі але не має її
-        for user_id in top_users:
-            if user_id not in current_role_members:
+        # Знімаємо роль у тих, хто не повинен її мати
+        for user_id in current_holders:
+            if user_id not in target_users:
                 member = guild.get_member(user_id)
                 if member:
                     try:
-                        await member.add_roles(role, reason="Щотижневе оновлення ролей - в топі")
-                        assigned_count += 1
+                        await member.remove_roles(role, reason="Система щотижневих ролей - не в топі")
+                        removed.append(member)
                     except:
                         pass
 
-        return assigned_count, removed_count
+        # Видаємо роль тим, хто повинен її мати
+        for user_id in target_users:
+            if user_id not in current_holders:
+                member = guild.get_member(user_id)
+                if member:
+                    try:
+                        await member.add_roles(role, reason="Система щотижневих ролей - в топі")
+                        assigned.append(member)
+                    except:
+                        pass
 
-    async def _send_weekly_report(self, guild, report):
-        """Відправляє щотижневий звіт"""
-        guild_settings = await db.guild_settings.find_one({"guild_id": str(guild.id)})
-        if not guild_settings or not guild_settings.get("weekly_report_channel_id"):
-            return
+        return assigned, removed
 
-        channel = guild.get_channel(int(guild_settings["weekly_report_channel_id"]))
-        if not channel:
-            return
-
-        total_assigned = sum(report["assigned"].values())
-        total_removed = sum(report["removed"].values())
-
-        # Якщо немає змін, не відправляємо звіт
-        if total_assigned == 0 and total_removed == 0:
+    async def _log_role_changes(self, guild: discord.Guild, config: dict, role: discord.Role, assigned: List[discord.Member], removed: List[discord.Member]):
+        """Логує зміни ролей"""
+        log_channel = guild.get_channel(int(config["log_channel_id"]))
+        if not log_channel:
             return
 
         embed = discord.Embed(
-            title="🏆 Щотижневий звіт системи ролей",
+            title="🏆 Оновлення щотижневих ролей",
             color=0x7c7cf0,
-            timestamp=datetime.utcnow(),
-            description="Результати оновлення ролей за минулий тиждень"
+            timestamp=datetime.utcnow()
         )
 
-        if total_assigned > 0:
-            assigned_text = f"**Всього видано: {total_assigned}**\n"
-            for role_name, count in report["assigned"].items():
-                if count > 0:
-                    assigned_text += f"• {role_name}: +{count}\n"
-            embed.add_field(name="✅ Видано ролей", value=assigned_text, inline=False)
-
-        if total_removed > 0:
-            removed_text = f"**Всього знято: {total_removed}**\n"
-            for role_name, count in report["removed"].items():
-                if count > 0:
-                    removed_text += f"• {role_name}: -{count}\n"
-            embed.add_field(name="❌ Знято ролей", value=removed_text, inline=False)
+        activity_names = {
+            ActivityType.CHAT: "📝 Чат",
+            ActivityType.VOICE: "🎤 Войс", 
+            ActivityType.COMBINED: "🏆 Загальна"
+        }
 
         embed.add_field(
-            name="📅 Наступні оновлення", 
-            value="Кожна роль оновлюється через 7 днів після налаштування", 
+            name="📋 Інформація",
+            value=f"**Роль:** {role.mention}\n"
+                 f"**Активність:** {activity_names[config['activity_type']]}\n"
+                 f"**Позиція:** Топ {config['top_position']}",
             inline=False
         )
-        embed.set_footer(text="Автоматичне щотижневе оновлення ролей")
+
+        if assigned:
+            assigned_text = "\n".join([f"• {member.mention}" for member in assigned[:10]])
+            if len(assigned) > 10:
+                assigned_text += f"\n... і ще {len(assigned) - 10}"
+            embed.add_field(name="✅ Видано роль", value=assigned_text, inline=True)
+
+        if removed:
+            removed_text = "\n".join([f"• {member.mention}" for member in removed[:10]])
+            if len(removed) > 10:
+                removed_text += f"\n... і ще {len(removed) - 10}"
+            embed.add_field(name="❌ Знято роль", value=removed_text, inline=True)
+
+        embed.set_footer(text="Система щотижневих ролей")
 
         try:
-            await channel.send(embed=embed)
+            await log_channel.send(embed=embed)
         except:
             pass
 
-    @weekly_role_update.before_loop
-    async def before_weekly_update(self):
+    @role_updater.before_loop
+    async def before_role_updater(self):
         await self.bot.wait_until_ready()
+
+    @app_commands.command(name="weekly-status", description="[АДМІН] Переглянути статус системи щотижневих ролей")
+    async def weekly_status(self, interaction: discord.Interaction):
+        """Показує статус системи щотижневих ролей"""
+        if not interaction.user.guild_permissions.manage_roles:
+            await interaction.response.send_message("❌ У тебе немає прав для управління ролями!", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            configs = await db.weekly_roles.find({
+                "guild_id": str(interaction.guild.id),
+                "enabled": True
+            }).to_list(100)
+
+            if not configs:
+                embed = discord.Embed(
+                    title="📊 Статус системи щотижневих ролей",
+                    color=0x7c7cf0,
+                    description="❌ Система не налаштована\n\nВикористай `/weekly-role` для налаштування"
+                )
+                await interaction.followup.send(embed=embed)
+                return
+
+            embed = discord.Embed(
+                title="📊 Статус системи щотижневих ролей",
+                color=0x7c7cf0,
+                description=f"Знайдено **{len(configs)}** активних конфігурацій"
+            )
+
+            activity_names = {
+                ActivityType.CHAT: "📝 Чат",
+                ActivityType.VOICE: "🎤 Войс",
+                ActivityType.COMBINED: "🏆 Загальна"
+            }
+
+            # Групуємо по ролях
+            role_configs = {}
+            for config in configs:
+                role_id = config["role_id"]
+                if role_id not in role_configs:
+                    role_configs[role_id] = []
+                role_configs[role_id].append(config)
+
+            for role_id, role_configs_list in list(role_configs.items())[:10]:  # Максимум 10 ролей
+                role = interaction.guild.get_role(int(role_id))
+                if not role:
+                    continue
+
+                config_texts = []
+                for config in role_configs_list:
+                    activity_type = activity_names.get(config["activity_type"], config["activity_type"])
+                    position = config["top_position"]
+                    duration = config["duration_days"]
+                    next_update = config.get("next_update", datetime.utcnow())
+                    
+                    config_text = f"{activity_type} • Топ {position} • {duration}д • <t:{int(next_update.timestamp())}:R>"
+                    config_texts.append(config_text)
+
+                embed.add_field(
+                    name=f"{role.name}",
+                    value="\n".join(config_texts),
+                    inline=False
+                )
+
+            await interaction.followup.send(embed=embed)
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ Помилка: {str(e)}")
 
 async def setup(bot):
     await bot.add_cog(WeeklyRoleSystem(bot))
