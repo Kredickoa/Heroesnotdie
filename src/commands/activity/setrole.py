@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from modules.db import get_database
 import asyncio
 
@@ -124,7 +124,7 @@ class WeeklyRoleView(discord.ui.View):
             await interaction.followup.send(f"✅ Налаштовано роль **{role.name}** для топ {top_count} активних в войсі!", ephemeral=True)
 
         except asyncio.TimeoutError:
-            await interaction.followup.send("⏰ Час очікування вichерпано. Спробуй ще раз.", ephemeral=True)
+            await interaction.followup.send("⏰ Час очікування вичерпано. Спробуй ще раз.", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ Помилка: {str(e)}", ephemeral=True)
 
@@ -442,7 +442,8 @@ class WeeklyRoleSystem(commands.Cog):
         view = WeeklyRoleView()
         await interaction.followup.send(embed=embed, view=view, ephemeral=False)
 
-    @tasks.loop(time=discord.utils.utcnow().replace(hour=0, minute=0, second=0, microsecond=0))
+    # ВИПРАВЛЕННЯ: Використовуємо datetime.time замість datetime.datetime
+    @tasks.loop(time=time(hour=0, minute=0, second=0))
     async def weekly_role_update(self):
         """Щотижневе оновлення ролей (кожного понеділка)"""
         # Перевіряємо чи сьогодні понеділок
