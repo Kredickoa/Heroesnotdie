@@ -623,8 +623,8 @@ class WeeklyRoleSystem(commands.Cog):
             embed.add_field(name="❌ Знято ролей", value=removed_text, inline=False)
 
         embed.add_field(
-            name="📅 Наступне оновлення", 
-            value="<t:" + str(int((datetime.now() + timedelta(days=7)).timestamp())) + ":R>", 
+            name="📅 Наступні оновлення", 
+            value="Кожна роль оновлюється через 7 днів після налаштування", 
             inline=False
         )
         embed.set_footer(text="Автоматичне щотижневе оновлення ролей")
