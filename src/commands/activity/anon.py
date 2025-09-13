@@ -39,6 +39,7 @@ class AnnouncementCog(commands.Cog):
         )
         
         await ctx.send(embed=embed)
+        await ctx.send("@everyone")
 
 # Setup function for the cog
 async def setup(bot):
