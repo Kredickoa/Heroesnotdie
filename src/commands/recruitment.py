@@ -1,5 +1,8 @@
 import discord
 from discord.ext import commands
+from modules.db import get_database
+
+db = get_database()
 
 class RecruitmentCog(commands.Cog):
     def __init__(self, bot):
@@ -9,13 +12,13 @@ class RecruitmentCog(commands.Cog):
     async def recruitment_command(self, ctx):
         """Команда для відображення інформації про набір в адміністрацію"""
         
-        # Create recruitment embed
+        # Створюємо embed для набору
         embed = discord.Embed(
             title="Набір вакансій:",
             color=0x36393F
         )
         
-        # Set the recruitment image
+        # Встановлюємо зображення для набору
         embed.set_image(url="https://i.imgur.com/6RTM1Gw.png")
         
         embed.add_field(
@@ -34,12 +37,12 @@ class RecruitmentCog(commands.Cog):
 
 <@&1403092677162958878> — **досвідчені учасники сервера.** Це люди, які давно перебувають на сервері та знають його від А до Я. Вони можуть допомогти новачкам зорієнтуватися, пояснити правила, підказати, як користуватися каналами чи економікою. Є опорою для спільноти, але не мають повноважень модерації.
 
-**Звертайся в [support](https://discord.com/channels/1386300362595504159/1403682856814903368)**""",
+**Звертайся в [підтримку](https://discord.com/channels/1386300362595504159/1403682856814903368)**""",
             inline=False
         )
         
         await ctx.send(embed=embed)
 
-# Setup function for the cog
+# Функція налаштування для кога
 async def setup(bot):
     await bot.add_cog(RecruitmentCog(bot))
