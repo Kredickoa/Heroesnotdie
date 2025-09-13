@@ -645,6 +645,71 @@ class TicketMainView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(TicketTypeSelect())
 
+class MultiRoleSelect(discord.ui.Select):
+    def __init__(self, guild: discord.Guild, mode: str, guild_config: dict, options: list):
+        self.guild = guild
+        self.mode = mode
+        self.guild_config = guild_config
+        
+        if not options:
+            options = [discord.SelectOption(label="Немає доступних ролей", value="no_roles")]
+        
+        placeholder = "Оберіть ролі для додавання..." if mode == "add" else "Оберіть ролі для видалення..."
+        
+        super().__init__(
+            placeholder=placeholder,
+            options=options,
+            min_values=1,
+            max_values=min(len(options), 25)
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "no_roles":
+            text = "Немає ролей для додавання" if self.mode == "add" else "Немає ролей для видалення"
+            await interaction.response.send_message(text, ephemeral=True)
+            return
+        
+        changed_roles = []
+        
+        for role_id_str in self.values:
+            role_id = int(role_id_str)
+            role = interaction.guild.get_role(role_id)
+            
+            if not role:
+                continue
+            
+            if self.mode == "add":
+                if role_id not in self.guild_config["available_roles"]:
+                    self.guild_config["available_roles"].append(role_id)
+                    changed_roles.append(f"+ {role.mention}")
+            else:
+                if role_id in self.guild_config["available_roles"]:
+                    self.guild_config["available_roles"].remove(role_id)
+                    changed_roles.append(f"- {role.mention}")
+        
+        await update_guild_config(interaction.guild.id, {"available_roles": self.guild_config["available_roles"]})
+        
+        if changed_roles:
+            action = "додано" if self.mode == "add" else "видалено"
+            embed = discord.Embed(
+                title=f"Ролі {action}",
+                description="\n".join(changed_roles),
+                color=0x57f287 if self.mode == "add" else 0xed4245
+            )
+            embed.add_field(
+                name="Загальна кількість ролей",
+                value=f"{len(self.guild_config['available_roles'])} ролей",
+                inline=True
+            )
+        else:
+            embed = discord.Embed(
+                title="Нічого не змінено",
+                description="Вибрані ролі вже мають відповідний статус",
+                color=0xfee75c
+            )
+        
+        await interaction.response.edit_message(embed=embed, view=None)
+
 class TicketSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -655,36 +720,15 @@ class TicketSystem(commands.Cog):
         self.bot.add_view(GeneralTicketButtons())
         self.bot.add_view(TicketCloseView())
     
-    @app_commands.command(name="ticket_setup", description="Налаштування системи тікетів")
-    @app_commands.describe(
-        action="Дія для виконання",
-        channel="Канал для панелі тікетів",
-        moderator_role="Роль модераторів",
-        log_channel="Канал для логів тікетів",
-        category="Категорія для тікетів"
-    )
-    @app_commands.choices(action=[
-        app_commands.Choice(name="Створити панель", value="create_panel"),
-        app_commands.Choice(name="Налаштувати конфігурацію", value="configure"),
-        app_commands.Choice(name="Показати поточні налаштування", value="show_config"),
-        app_commands.Choice(name="Додати ролі", value="add_roles"),
-        app_commands.Choice(name="Видалити ролі", value="remove_roles"),
-        app_commands.Choice(name="Показати ролі", value="list_roles")
-    ])
-    async def ticket_setup(
-        self, 
-        interaction: discord.Interaction,
-        action: str,
-        channel: discord.TextChannel = None,
-        moderator_role: discord.Role = None,
-        log_channel: discord.TextChannel = None,
-        category: discord.CategoryChannel = None
-    ):
+    # Група команд для тікетів
+    ticket_group = app_commands.Group(name="ticket", description="Команди для керування системою тікетів")
+    
+    @ticket_group.command(name="panel", description="Створити панель тікетів")
+    @app_commands.describe(channel="Канал де створити панель (за замовчуванням поточний)")
+    async def create_panel(self, interaction: discord.Interaction, channel: discord.TextChannel = None):
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
             return
-        
-        guild_config = await get_guild_config(interaction.guild.id)
         
         if action == "create_panel":
             target_channel = channel or interaction.channel
@@ -766,8 +810,20 @@ class TicketSystem(commands.Cog):
                 )
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @ticket_group.command(name="info", description="Інформація та статистика")
+    @app_commands.describe(type="Тип інформації")
+    @app_commands.choices(type=[
+        app_commands.Choice(name="Поточні налаштування", value="settings"),
+        app_commands.Choice(name="Статистика тікетів", value="stats")
+    ])
+    async def info(self, interaction: discord.Interaction, type: str):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+            return
         
-        elif action == "show_config":
+        if type == "settings":
+            guild_config = await get_guild_config(interaction.guild.id)
             embed = discord.Embed(title="Поточні налаштування", color=0x2b2d31)
             
             mod_role = interaction.guild.get_role(guild_config["moderator_role_id"]) if guild_config["moderator_role_id"] else None
@@ -781,11 +837,75 @@ class TicketSystem(commands.Cog):
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
         
-        elif action in ["add_roles", "remove_roles", "list_roles"]:
-            await self.manage_roles_action(interaction, action, guild_config)
+        elif type == "stats":
+            # Загальна статистика
+            total_tickets = await db.tickets.count_documents({"guild_id": interaction.guild.id})
+            open_tickets = await db.tickets.count_documents({"guild_id": interaction.guild.id, "status": "open"})
+            
+            # Статистика за типами
+            type_stats = {}
+            for ticket_type in TICKET_TYPES.keys():
+                count = await db.tickets.count_documents({
+                    "guild_id": interaction.guild.id, 
+                    "ticket_type": ticket_type
+                })
+                type_stats[ticket_type] = count
+            
+            # Статистика за тиждень
+            week_stats = await get_week_stats(interaction.guild.id)
+            week_total = sum(count for _, count in week_stats)
+            
+            embed = discord.Embed(
+                title="Статистика тікетів",
+                color=0x2b2d31,
+                timestamp=datetime.now()
+            )
+            
+            embed.add_field(
+                name="Загальна статистика",
+                value=f"**Всього тікетів:** {total_tickets}\n**Відкритих зараз:** {open_tickets}\n**За останні 7 днів:** {week_total}",
+                inline=False
+            )
+            
+            # Статистика по типах
+            if any(type_stats.values()):
+                type_text = []
+                for ticket_type, count in type_stats.items():
+                    if count > 0:
+                        config = TICKET_TYPES[ticket_type]
+                        type_text.append(f"{config['emoji']} {config['name']}: {count}")
+                
+                if type_text:
+                embed.add_field(
+                    name="За типами",
+                    value="\n".join(type_text),
+                    inline=False
+                )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+                    embed.add_field(
+                        name="За типами",
+                        value="\n".join(type_text),
+                        inline=False
+                    )
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    async def manage_roles_action(self, interaction: discord.Interaction, action: str, guild_config: dict):
-        if action == "list_roles":
+    @ticket_group.command(name="roles", description="Керування ролями для заявок")
+    @app_commands.describe(action="Дія з ролями")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Додати ролі", value="add"),
+        app_commands.Choice(name="Видалити ролі", value="remove"),
+        app_commands.Choice(name="Показати список", value="list")
+    ])
+    async def roles(self, interaction: discord.Interaction, action: str):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+            return
+        
+        guild_config = await get_guild_config(interaction.guild.id)
+        
+        if action == "list":
             if not guild_config["available_roles"]:
                 embed = discord.Embed(
                     title="Список ролей",
@@ -807,6 +927,7 @@ class TicketSystem(commands.Cog):
                 else:
                     roles_list.append(f"{i}. Роль видалена (ID: {role_id})")
             
+            # Оновлюємо конфіг якщо знайдені видалені ролі
             if len(valid_roles) != len(guild_config["available_roles"]):
                 await update_guild_config(interaction.guild.id, {"available_roles": valid_roles})
             
@@ -818,112 +939,85 @@ class TicketSystem(commands.Cog):
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
         
-        else:
-            view = MultiRoleView(interaction.guild, action.replace("_roles", ""))
-            title = "Додавання ролей" if action == "add_roles" else "Видалення ролей"
-            description = "Оберіть ролі для додавання до списку заявок:" if action == "add_roles" else "Оберіть ролі для видалення зі списку заявок:"
-            
-            embed = discord.Embed(title=title, description=description, color=0x2b2d31)
-            
+        elif action == "add":
             # Створюємо select з ролями
             options = []
-            if action == "add_roles":
-                for role in interaction.guild.roles:
-                    if (role != interaction.guild.default_role and 
-                        not role.is_bot_managed() and 
-                        role.id != guild_config.get("moderator_role_id") and
-                        not role.permissions.administrator and
-                        not role.permissions.manage_guild and
-                        role.id not in guild_config["available_roles"]):
-                        options.append(discord.SelectOption(label=role.name[:100], value=str(role.id)))
-            else:
-                for role_id in guild_config["available_roles"]:
-                    role = interaction.guild.get_role(role_id)
-                    if role:
-                        options.append(discord.SelectOption(label=role.name[:100], value=str(role.id)))
+            for role in interaction.guild.roles:
+                if (role != interaction.guild.default_role and 
+                    not role.is_bot_managed() and 
+                    role.id != guild_config.get("moderator_role_id") and
+                    not role.permissions.administrator and
+                    not role.permissions.manage_guild and
+                    role.id not in guild_config["available_roles"]):
+                    options.append(discord.SelectOption(label=role.name[:100], value=str(role.id)))
             
             if not options:
-                text = "Немає ролей для додавання" if action == "add_roles" else "Немає ролей для видалення"
-                embed.description = text
+                embed = discord.Embed(
+                    title="Додавання ролей",
+                    description="Немає ролей для додавання",
+                    color=0xed4245
+                )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             
-            select = MultiRoleSelect(interaction.guild, action.replace("_roles", ""), guild_config, options[:25])
+            embed = discord.Embed(
+                title="Додавання ролей",
+                description="Оберіть ролі для додавання до списку заявок:",
+                color=0x2b2d31
+            )
+            
+            select = MultiRoleSelect(interaction.guild, "add", guild_config, options[:25])
             view = discord.ui.View(timeout=300)
             view.add_item(select)
             
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-class MultiRoleSelect(discord.ui.Select):
-    def __init__(self, guild: discord.Guild, mode: str, guild_config: dict, options: list):
-        self.guild = guild
-        self.mode = mode
-        self.guild_config = guild_config
         
-        if not options:
-            options = [discord.SelectOption(label="Немає доступних ролей", value="no_roles")]
-        
-        placeholder = "Оберіть ролі для додавання..." if mode == "add" else "Оберіть ролі для видалення..."
-        
-        super().__init__(
-            placeholder=placeholder,
-            options=options,
-            min_values=1,
-            max_values=min(len(options), 25)
-        )
-    
-    async def callback(self, interaction: discord.Interaction):
-        if self.values[0] == "no_roles":
-            text = "Немає ролей для додавання" if self.mode == "add" else "Немає ролей для видалення"
-            await interaction.response.send_message(text, ephemeral=True)
-            return
-        
-        changed_roles = []
-        
-        for role_id_str in self.values:
-            role_id = int(role_id_str)
-            role = interaction.guild.get_role(role_id)
+        elif action == "remove":
+            if not guild_config["available_roles"]:
+                embed = discord.Embed(
+                    title="Видалення ролей",
+                    description="Немає ролей для видалення",
+                    color=0xed4245
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
             
-            if not role:
-                continue
+            # Створюємо select з існуючими ролями
+            options = []
+            for role_id in guild_config["available_roles"]:
+                role = interaction.guild.get_role(role_id)
+                if role:
+                    options.append(discord.SelectOption(label=role.name[:100], value=str(role.id)))
             
-            if self.mode == "add":
-                if role_id not in self.guild_config["available_roles"]:
-                    self.guild_config["available_roles"].append(role_id)
-                    changed_roles.append(f"+ {role.mention}")
-            else:
-                if role_id in self.guild_config["available_roles"]:
-                    self.guild_config["available_roles"].remove(role_id)
-                    changed_roles.append(f"- {role.mention}")
-        
-        await update_guild_config(interaction.guild.id, {"available_roles": self.guild_config["available_roles"]})
-        
-        if changed_roles:
-            action = "додано" if self.mode == "add" else "видалено"
+            if not options:
+                embed = discord.Embed(
+                    title="Видалення ролей",
+                    description="Всі налаштовані ролі видалені з сервера",
+                    color=0xfee75c
+                )
+                # Очищаємо список
+                await update_guild_config(interaction.guild.id, {"available_roles": []})
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
             embed = discord.Embed(
-                title=f"Ролі {action}",
-                description="\n".join(changed_roles),
-                color=0x57f287 if self.mode == "add" else 0xed4245
+                title="Видалення ролей",
+                description="Оберіть ролі для видалення зі списку заявок:",
+                color=0x2b2d31
             )
-            embed.add_field(
-                name="Загальна кількість ролей",
-                value=f"{len(self.guild_config['available_roles'])} ролей",
-                inline=True
-            )
-        else:
-            embed = discord.Embed(
-                title="Нічого не змінено",
-                description="Вибрані ролі вже мають відповідний статус",
-                color=0xfee75c
-            )
+            
+            select = MultiRoleSelect(interaction.guild, "remove", guild_config, options[:25])
+            view = discord.ui.View(timeout=300)
+            view.add_item(select)
+            
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                embed.add_field(
+                    name="За типами",
+                    value="\n".join(type_text),
+                    inline=False
+                )
         
-        await interaction.response.edit_message(embed=embed, view=None)
-
-class MultiRoleView(discord.ui.View):
-    def __init__(self, guild: discord.Guild, mode: str):
-        super().__init__(timeout=300)
-        self.guild = guild
-        self.mode = mode
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
