@@ -730,86 +730,98 @@ class TicketSystem(commands.Cog):
             await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
             return
         
-        if action == "create_panel":
-            target_channel = channel or interaction.channel
-            
-            # Головний embed з емодзі
-            main_embed = discord.Embed(
-                title="<:palka:1412777364387135589> Правила мероприятій",
-                color=0x2b2d31,
-                timestamp=datetime.now()
-            )
-            
-            # Додаємо правила
-            rules_text = (
-                "**1.** Дотримуйтесь всіх правил сервера на мероприятіях.\n"
-                "**2.** Заборонено заважати проведенню мероприятія або створювати помехи.\n"
-                "**3.** Дотримуйтесь правил, встановлених для конкретного мероприятія.\n"
-                "**4.** Ігнорування ведучого мероприятія недопустиме.\n"
-                "**5.** Кидати мероприятіє без поважної причини заборонено."
-            )
-            
-            main_embed.add_field(
-                name="<:palka:1412777364387135589> • Правила мероприятій :",
-                value=rules_text,
-                inline=False
-            )
-            
-            # Примітки
-            notes_text = (
-                "**—** Покарання видається по розсуду ведучого конкретного мероприятія.\n\n"
-                "**—** За порушення на мероприятіях ви получите роль @Ban | Event, яка обмежує участь у майбутніх мероприятіях.\n\n"
-                "**—** Якщо ви помітили порушення з боку @Host під час мероприятія, подайте жалобу через кнопку в анонсах # 📢 • анонсы.\n\n"
-                "**—** Щоб получити інформацію про потрібне вам мероприятіє, використовуйте меню нижче повідомлення."
-            )
-            
-            main_embed.add_field(
-                name="<:palka:1412777364387135589> • Примітки :",
-                value=notes_text,
-                inline=False
-            )
-            
-            view = TicketMainView()
-            await target_channel.send(embed=main_embed, view=view)
-            
-            success_embed = discord.Embed(
-                title="Панель тікетів створено",
-                description=f"Панель успішно розміщено в {target_channel.mention}",
+        target_channel = channel or interaction.channel
+        
+        # Головний embed з емодзі
+        main_embed = discord.Embed(
+            title="<:palka:1412777364387135589> Правила мероприятій",
+            color=0x2b2d31,
+            timestamp=datetime.now()
+        )
+        
+        # Додаємо правила
+        rules_text = (
+            "**1.** Дотримуйтесь всіх правил сервера на мероприятіях.\n"
+            "**2.** Заборонено заважати проведенню мероприятія або створювати помехи.\n"
+            "**3.** Дотримуйтесь правил, встановлених для конкретного мероприятія.\n"
+            "**4.** Ігнорування ведучого мероприятія недопустиме.\n"
+            "**5.** Кидати мероприятіє без поважної причини заборонено."
+        )
+        
+        main_embed.add_field(
+            name="<:palka:1412777364387135589> • Правила мероприятій :",
+            value=rules_text,
+            inline=False
+        )
+        
+        # Примітки
+        notes_text = (
+            "**—** Покарання видається по розсуду ведучого конкретного мероприятія.\n\n"
+            "**—** За порушення на мероприятіях ви получите роль @Ban | Event, яка обмежує участь у майбутніх мероприятіях.\n\n"
+            "**—** Якщо ви помітили порушення з боку @Host під час мероприятія, подайте жалобу через кнопку в анонсах # 📢 • анонсы.\n\n"
+            "**—** Щоб получити інформацію про потрібне вам мероприятіє, використовуйте меню нижче повідомлення."
+        )
+        
+        main_embed.add_field(
+            name="<:palka:1412777364387135589> • Примітки :",
+            value=notes_text,
+            inline=False
+        )
+        
+        view = TicketMainView()
+        await target_channel.send(embed=main_embed, view=view)
+        
+        success_embed = discord.Embed(
+            title="Панель тікетів створено",
+            description=f"Панель успішно розміщено в {target_channel.mention}",
+            color=0x57f287
+        )
+        await interaction.response.send_message(embed=success_embed, ephemeral=True)
+    
+    @ticket_group.command(name="config", description="Налаштувати систему тікетів")
+    @app_commands.describe(
+        moderator_role="Роль модераторів для тікетів",
+        log_channel="Канал для логування дій",
+        category="Категорія для тікетів"
+    )
+    async def configure(self, interaction: discord.Interaction, 
+                       moderator_role: discord.Role = None,
+                       log_channel: discord.TextChannel = None,
+                       category: discord.CategoryChannel = None):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("Тільки адміністратори можуть використовувати цю команду!", ephemeral=True)
+            return
+        
+        changes_made = []
+        updates = {}
+        
+        if moderator_role:
+            updates["moderator_role_id"] = moderator_role.id
+            changes_made.append(f"Роль модераторів: {moderator_role.mention}")
+        
+        if log_channel:
+            updates["log_channel_id"] = log_channel.id
+            changes_made.append(f"Канал логів: {log_channel.mention}")
+        
+        if category:
+            updates["category_id"] = category.id
+            changes_made.append(f"Категорія тікетів: {category.name}")
+        
+        if updates:
+            await update_guild_config(interaction.guild.id, updates)
+            embed = discord.Embed(
+                title="Конфігурацію оновлено",
+                description="**Змінено наступні налаштування:**\n\n" + "\n".join(changes_made),
                 color=0x57f287
             )
-            await interaction.response.send_message(embed=success_embed, ephemeral=True)
+        else:
+            embed = discord.Embed(
+                title="Нічого не змінено",
+                description="Вкажіть параметри для зміни",
+                color=0xfee75c
+            )
         
-        elif action == "configure":
-            changes_made = []
-            updates = {}
-            
-            if moderator_role:
-                updates["moderator_role_id"] = moderator_role.id
-                changes_made.append(f"Роль модераторів: {moderator_role.mention}")
-            
-            if log_channel:
-                updates["log_channel_id"] = log_channel.id
-                changes_made.append(f"Канал логів: {log_channel.mention}")
-            
-            if category:
-                updates["category_id"] = category.id
-                changes_made.append(f"Категорія тікетів: {category.name}")
-            
-            if updates:
-                await update_guild_config(interaction.guild.id, updates)
-                embed = discord.Embed(
-                    title="Конфігурацію оновлено",
-                    description="**Змінено наступні налаштування:**\n\n" + "\n".join(changes_made),
-                    color=0x57f287
-                )
-            else:
-                embed = discord.Embed(
-                    title="Нічого не змінено",
-                    description="Вкажіть параметри для зміни",
-                    color=0xfee75c
-                )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @ticket_group.command(name="info", description="Інформація та статистика")
     @app_commands.describe(type="Тип інформації")
@@ -876,13 +888,6 @@ class TicketSystem(commands.Cog):
                         type_text.append(f"{config['emoji']} {config['name']}: {count}")
                 
                 if type_text:
-                embed.add_field(
-                    name="За типами",
-                    value="\n".join(type_text),
-                    inline=False
-                )
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
                     embed.add_field(
                         name="За типами",
                         value="\n".join(type_text),
@@ -1011,13 +1016,6 @@ class TicketSystem(commands.Cog):
             view.add_item(select)
             
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-                embed.add_field(
-                    name="За типами",
-                    value="\n".join(type_text),
-                    inline=False
-                )
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(TicketSystem(bot))
