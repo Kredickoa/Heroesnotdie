@@ -9,7 +9,7 @@ class ComplaintModal(discord.ui.Modal, title='Відправити жалобу'
         style=discord.TextStyle.long,
         max_length=2000
     )
-
+    
     async def on_submit(self, interaction: discord.Interaction):
         # ID каналу для жалоб
         complaint_channel_id = 1403706530100023386
@@ -41,7 +41,7 @@ class EventButtons(discord.ui.View):
             url='https://discord.com/channels/1386300362595504159/1401581412682960896'
         )
         self.add_item(join_button)
-
+    
     @discord.ui.button(label='Відправити скаргу', emoji='<:megaphone3:1420458218131296413>', style=discord.ButtonStyle.secondary)
     async def complaint_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ComplaintModal()
@@ -50,13 +50,13 @@ class EventButtons(discord.ui.View):
 class EventTimetable(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
+    
     @commands.command(name="івенттайбл", aliases=["eventtimetable", "тайбл"])
     async def event_timetable(self, ctx):
         # Перший ембед з зображенням
         first_embed = discord.Embed(color=0x2b2d31)
         first_embed.set_image(url="https://i.imgur.com/ftmM1HG.png")
-
+        
         # Другий ембед з інформацією про гру
         second_embed = discord.Embed(
             title="**Gartic Phone** — HEROES NOT DIE",
@@ -64,9 +64,9 @@ class EventTimetable(commands.Cog):
             color=0x2b2d31
         )
         
-        # Додаємо поля з емодзі в одну лінію
+        # Додаємо поля з емодзі в одну лінію (з відміткою ведучого)
         second_embed.add_field(
-            name="<:zirka:1412519774780395631> Ведучий — <@!961262391314755665>",
+            name="<:zirka:1412519774780395631> Ведучий — <@961262391314755665>",
             value="",
             inline=False
         )
@@ -80,10 +80,10 @@ class EventTimetable(commands.Cog):
             value="",
             inline=False
         )
-
+        
         # Створюємо кнопки
         view = EventButtons()
-
+        
         # Відправляємо пінг ролі та ембеди з кнопками
         await ctx.send("||<@&1412151154699145318>||", embeds=[first_embed, second_embed], view=view)
 
