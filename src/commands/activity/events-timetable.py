@@ -48,7 +48,7 @@ class EventTimetable(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="івенттайбл")
+    @commands.command(name="івенттайбл", aliases=["eventtimetable", "івент"])
     async def event_timetable(self, ctx):
         # Перший ембед з зображенням
         first_embed = discord.Embed(color=0x2b2d31)
