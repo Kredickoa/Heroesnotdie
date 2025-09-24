@@ -42,7 +42,7 @@ class EventButtons(discord.ui.View):
         )
         self.add_item(join_button)
 
-    @discord.ui.button(label='Відправити скаргу', emoji='<:megaphone:1420452678139646023>', style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label='Відправити скаргу', emoji='<:megaphone3:1420458218131296413>', style=discord.ButtonStyle.secondary)
     async def complaint_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ComplaintModal()
         await interaction.response.send_modal(modal)
@@ -64,29 +64,28 @@ class EventTimetable(commands.Cog):
             color=0x2b2d31
         )
         
-        # Додаємо поля з емодзі
+        # Додаємо поля з емодзі в одну лінію
         second_embed.add_field(
-            name="<:zirka:1412519774780395631> Ведучий",
-            value="<@961262391314755665>",
+            name="<:zirka:1412519774780395631> Ведучий — <@961262391314755665>",
+            value="",
             inline=False
         )
         second_embed.add_field(
-            name="<:cubok:1412519929726374109> Нагорода за перемогу",
-            value="кастомна роль до слідуючого івенту",
+            name="<:cubok:1412519929726374109> Нагорода за перемогу — кастомна роль до слідуючого івенту",
+            value="",
             inline=False
         )
         second_embed.add_field(
-            name="<:kalendar:1412519787019501719> Початок івенту",
-            value="27 вересня 2025 р. 17:35",
+            name="<:kalendar:1412519787019501719> Початок івенту — 27 вересня 2025 р. 17:35",
+            value="",
             inline=False
         )
 
         # Створюємо кнопки
         view = EventButtons()
 
-        # Відправляємо ембеди та кнопки
-        await ctx.send(embed=first_embed)
-        await ctx.send(embed=second_embed, view=view)
+        # Відправляємо пінг ролі та ембеди з кнопками
+        await ctx.send("||<@&1412151154699145318>||", embeds=[first_embed, second_embed], view=view)
 
 async def setup(bot):
     await bot.add_cog(EventTimetable(bot))
