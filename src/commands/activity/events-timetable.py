@@ -64,10 +64,10 @@ class EventTimetable(commands.Cog):
             color=0x2b2d31
         )
         
-        # Додаємо поля з емодзі в одну лінію (з відміткою ведучого)
+        # Додаємо поля з емодзі в одну лінію
         second_embed.add_field(
-            name="<:zirka:1412519774780395631> Ведучий",
-            value="<@961262391314755665>",
+            name="<:zirka:1412519774780395631> Ведучий — <@961262391314755665>",
+            value="",
             inline=False
         )
         second_embed.add_field(
