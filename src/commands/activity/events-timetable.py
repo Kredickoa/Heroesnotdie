@@ -33,11 +33,14 @@ class ComplaintModal(discord.ui.Modal, title='Відправити жалобу'
 class EventButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-
-    @discord.ui.button(label='Приєднатись', emoji='<:plus:1420453103005859990>', style=discord.ButtonStyle.primary, url='https://discord.com/channels/1386300362595504159/1401581412682960896')
-    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Цей метод не буде викликаний для URL кнопок
-        pass
+        # Додаємо URL кнопку через add_item
+        join_button = discord.ui.Button(
+            label='Приєднатись',
+            emoji='<:plus:1420453103005859990>',
+            style=discord.ButtonStyle.link,
+            url='https://discord.com/channels/1386300362595504159/1401581412682960896'
+        )
+        self.add_item(join_button)
 
     @discord.ui.button(label='Відправити скаргу', emoji='<:megaphone:1420452678139646023>', style=discord.ButtonStyle.secondary)
     async def complaint_button(self, interaction: discord.Interaction, button: discord.ui.Button):
