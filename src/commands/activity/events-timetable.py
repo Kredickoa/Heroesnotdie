@@ -34,13 +34,12 @@ class EventButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label='Приєднатись', style=discord.ButtonStyle.primary)
+    @discord.ui.button(label='Приєднатись', emoji='<:plus:1420453103005859990>', style=discord.ButtonStyle.primary, url='https://discord.com/channels/1386300362595504159/1401581412682960896')
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Перенаправлення до каналу
-        channel_url = "https://discord.com/channels/1386300362595504159/1401581412682960896"
-        await interaction.response.send_message(f"Перейдіть до каналу для участі: {channel_url}", ephemeral=True)
+        # Цей метод не буде викликаний для URL кнопок
+        pass
 
-    @discord.ui.button(label='Відправити жалобу', style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label='Відправити скаргу', emoji='<:megaphone:1420452678139646023>', style=discord.ButtonStyle.secondary)
     async def complaint_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ComplaintModal()
         await interaction.response.send_modal(modal)
